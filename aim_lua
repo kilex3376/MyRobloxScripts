@@ -1,78 +1,103 @@
+-- [[ CUSTOM PLEX HUB | BLOX FRUITS ]] --
+
 local ScreenGui = Instance.new("ScreenGui")
 local ToggleButton = Instance.new("TextButton")
 local MainFrame = Instance.new("Frame")
 local UIListLayout = Instance.new("UIListLayout")
+local UICorner = Instance.new("UICorner")
 
 ScreenGui.Parent = game.CoreGui
-ToggleButton.Parent = ScreenGui
-ToggleButton.Text = "MENU"
-ToggleButton.Size = UDim2.new(0, 70, 0, 35)
-ToggleButton.Position = UDim2.new(0, 10, 0, 150)
-ToggleButton.Draggable = true
+ScreenGui.Name = "PlexMobile"
 
+-- Плавающая кнопка MENU
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+ToggleButton.Position = UDim2.new(0, 10, 0, 150)
+ToggleButton.Size = UDim2.new(0, 70, 0, 35)
+ToggleButton.Text = "MENU"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Font = Enum.Font.SourceSansBold
+ToggleButton.TextSize = 14
+ToggleButton.Draggable = true
+ToggleButton.Active = true
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 8)
+BtnCorner.Parent = ToggleButton
+
+-- Основное меню
+MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.Size = UDim2.new(0, 180, 0, 300)
-MainFrame.Position = UDim2.new(0.5, -90, 0.5, -150)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.Position = UDim2.new(0.5, -90, 0.5, -130)
+MainFrame.Size = UDim2.new(0, 180, 0, 260)
 MainFrame.Visible = false
+MainFrame.Active = true
 MainFrame.Draggable = true
+local FrameCorner = Instance.new("UICorner")
+FrameCorner.Parent = MainFrame
 
 UIListLayout.Parent = MainFrame
+UIListLayout.Padding = UDim.new(0, 6)
 UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-UIListLayout.Padding = UDim.new(0, 5)
 
+-- Функция создания кнопок
 local function createButton(name, callback)
     local btn = Instance.new("TextButton")
     btn.Parent = MainFrame
     btn.Size = UDim2.new(0.9, 0, 0, 40)
     btn.Text = name
-    btn.MouseButton1Click:Connect(callback)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 14
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = btn
+    btn.MouseButton1Click:Connect(function() callback(btn) end)
 end
 
 ToggleButton.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
 
--- --- ЛОГИКА SILENT AIM ---
-_G.SilentAim = false
-
-createButton("Silent Aim: OFF", function(self)
-    _G.SilentAim = not _G.SilentAim
-    self.Text = "Silent Aim: " .. (_G.SilentAim and "ON" or "OFF")
-end)
-
--- Функция поиска цели
+-- --- ЛОГИКА ПОИСКА ЦЕЛИ ---
 local function getClosestPlayer()
     local target = nil
-    local dist = math.huge
+    local dist = 500
     for _, v in pairs(game.Players:GetPlayers()) do
         if v ~= game.Players.LocalPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character.Humanoid.Health > 0 then
             local d = (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - v.Character.HumanoidRootPart.Position).Magnitude
             if d < dist then
                 dist = d
-                target = v
+                target = v.Character.HumanoidRootPart
             end
         end
     end
     return target
 end
 
--- Хук метатаблицы (подмена выстрела)
+-- --- 1. SILENT AIM (ЧЕРЕЗ HOOKMETAMETHOD) ---
+_G.SilentAim = false
+createButton("Silent Aim: OFF", function(btn)
+    _G.SilentAim = not _G.SilentAim
+    btn.Text = "Silent Aim: " .. (_G.SilentAim and "ON" or "OFF")
+    btn.TextColor3 = _G.SilentAim and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 255, 255)
+end)
+
 local mt = getrawmetatable(game)
 local oldNamecall = mt.__namecall
 setreadonly(mt, false)
 
 mt.__namecall = newcclosure(function(self, ...)
-    local args = {...}
     local method = getnamecallmethod()
-
-    if _G.SilentAim and method == "FireServer" then
-        -- Названия ивентов атак в Blox Fruits часто меняются, 
-        -- этот код перехватывает основные триггеры урона
+    local args = {...}
+    if _G.SilentAim and method == "FireServer" and not checkcaller() then
         local target = getClosestPlayer()
-        if target and target.Character then
-            -- Если это ивент урона, подменяем позицию цели на RootPart врага
+        if target then
             if self.Name == "RemoteEvent" or self.Name:find("Damage") or self.Name:find("Attack") then
-                return oldNamecall(self, target.Character.HumanoidRootPart.Position, unpack(args))
+                args[1] = target.Position
+                return oldNamecall(self, unpack(args))
             end
         end
     end
@@ -80,24 +105,49 @@ mt.__namecall = newcclosure(function(self, ...)
 end)
 setreadonly(mt, true)
 
--- --- ОСТАЛЬНЫЕ ФУНКЦИИ ---
-createButton("Extreme Speed", function()
-    _G.Speed = not _G.Speed
-    game:GetService("RunService").Stepped:Connect(function()
-        if _G.Speed then
-            pcall(function()
-                game.Players.LocalPlayer.Character:TranslateBy(game.Players.LocalPlayer.Character.Humanoid.MoveDirection * 1.5)
-            end)
-        end
-    end)
+-- --- 2. ANTI-STUN (SMART MODE) ---
+_G.AntiStun = false
+createButton("Anti-Stun: OFF", function(btn)
+    _G.AntiStun = not _G.AntiStun
+    btn.Text = "Anti-Stun: " .. (_G.AntiStun and "ON" or "OFF")
+    btn.TextColor3 = _G.AntiStun and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 255, 255)
 end)
 
-createButton("Anti-Stun", function()
-    game:GetService("RunService").Stepped:Connect(function()
+task.spawn(function()
+    while task.wait() do
+        if _G.AntiStun then
+            pcall(function()
+                local hum = game.Players.LocalPlayer.Character.Humanoid
+                if hum.Sit then hum.Sit = false end
+                -- Возвращаем управление, если игра пытается нас заморозить
+                if hum.PlatformStand then hum.PlatformStand = false end
+            end)
+        end
+    end
+end)
+
+-- --- 3. EXTREME SPEED (CFrame) ---
+_G.ExtremeSpeed = false
+createButton("Extreme Speed: OFF", function(btn)
+    _G.ExtremeSpeed = not _G.ExtremeSpeed
+    btn.Text = "Speed: " .. (_G.ExtremeSpeed and "ON" or "OFF")
+    btn.TextColor3 = _G.ExtremeSpeed and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 255, 255)
+end)
+
+game:GetService("RunService").Stepped:Connect(function()
+    if _G.ExtremeSpeed then
         pcall(function()
             local char = game.Players.LocalPlayer.Character
-            if char:FindFirstChild("Stun") then char.Stun:Destroy() end
-            if char.Humanoid.Sit then char.Humanoid.Sit = false end
+            if char.Humanoid.MoveDirection.Magnitude > 0 then
+                char:TranslateBy(char.Humanoid.MoveDirection * 1.5)
+            end
         end)
+    end
+end)
+
+-- --- 4. INFINITE JUMP ---
+createButton("Infinite Jump", function()
+    game:GetService("UserInputService").JumpRequest:Connect(function()
+        game.Players.LocalPlayer.Character.Humanoid:ChangeState("Jumping")
     end)
 end)

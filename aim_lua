@@ -8,40 +8,10 @@ local Window = Rayfield:CreateWindow({
 
 local Tab = Window:CreateTab("Main", 4483345998)
 
--- ТВОЙ СТАРЫЙ АИМБОТ
-Tab:CreateToggle({
-   Name = "Aimlock Nearest NPC",
-   CurrentValue = false,
-   Callback = function(Value)
-       _G.AimActive = Value
-       task.spawn(function()
-           while _G.AimActive do
-               task.wait()
-               pcall(function()
-                   local closest = nil
-                   local dist = math.huge
-                   for _, v in pairs(game.Workspace.Enemies:GetChildren()) do
-                       if v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
-                           local d = (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - v.HumanoidRootPart.Position).magnitude
-                           if d < dist then
-                               dist = d
-                               closest = v
-                           end
-                       end
-                   end
-                   if closest then
-                       workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, closest.HumanoidRootPart.Position)
-                   end
-               end)
-           end
-       end)
-   end,
-})
-
--- НОВЫЕ ФУНКЦИИ (SPEED / JUMP / DASH)
+-- СКОРОСТЬ (Увеличил до 500)
 Tab:CreateSlider({
    Name = "WalkSpeed (Спидхак)",
-   Range = {16, 200},
+   Range = {16, 500},
    Increment = 1,
    CurrentValue = 16,
    Callback = function(Value)
@@ -49,9 +19,10 @@ Tab:CreateSlider({
    end,
 })
 
+-- ПРЫЖОК (Увеличил до 500)
 Tab:CreateSlider({
-   Name = "JumpPower (Высота прыжка)",
-   Range = {50, 300},
+   Name = "JumpPower (Высота)",
+   Range = {50, 500},
    Increment = 1,
    CurrentValue = 50,
    Callback = function(Value)
@@ -60,16 +31,20 @@ Tab:CreateSlider({
    end,
 })
 
+-- ДАЛЬНОСТЬ ДЭША (Через усиление импульса)
 Tab:CreateButton({
-   Name = "Infinite Dash (Беск. рывок)",
+   Name = "Buff Dash (Усилить Рывок)",
    Callback = function()
-       local old; old = hookmetamethod(game, "__namecall", function(self, ...)
-           local method = getnamecallmethod()
-           if method == "FireServer" and self.Name == "Dash" then
-               -- Логика обхода
+       local UserInputService = game:GetService("UserInputService")
+       UserInputService.InputBegan:Connect(function(input, gameProcessed)
+           if not gameProcessed and input.KeyCode == Enum.KeyCode.Q then -- Когда жмешь рывок (Q)
+               local hum = game.Players.LocalPlayer.Character.Humanoid
+               local oldSpeed = hum.WalkSpeed
+               hum.WalkSpeed = oldSpeed * 5 -- Временно ускоряем в 5 раз
+               task.wait(0.2)
+               hum.WalkSpeed = oldSpeed
            end
-           return old(self, ...)
        end)
-       print("Dash модифицирован!")
+       print("Dash buffed!")
    end,
 })

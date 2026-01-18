@@ -1,53 +1,30 @@
--- Создание интерфейса
 local ScreenGui = Instance.new("ScreenGui")
 local ToggleButton = Instance.new("TextButton")
 local MainFrame = Instance.new("Frame")
 local UIListLayout = Instance.new("UIListLayout")
 
 ScreenGui.Parent = game.CoreGui
-ScreenGui.Name = "MyMobileHub"
-
--- Плавающая кнопка
-ToggleButton.Name = "ToggleButton"
 ToggleButton.Parent = ScreenGui
-ToggleButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-ToggleButton.Position = UDim2.new(0, 10, 0, 150)
-ToggleButton.Size = UDim2.new(0, 70, 0, 35)
 ToggleButton.Text = "MENU"
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Size = UDim2.new(0, 70, 0, 35)
+ToggleButton.Position = UDim2.new(0, 10, 0, 150)
 ToggleButton.Draggable = true
-ToggleButton.Active = true
-local BtnCorner = Instance.new("UICorner")
-BtnCorner.Parent = ToggleButton
 
--- Основное меню
-MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MainFrame.Position = UDim2.new(0.5, -90, 0.5, -120)
 MainFrame.Size = UDim2.new(0, 180, 0, 300)
+MainFrame.Position = UDim2.new(0.5, -90, 0.5, -150)
 MainFrame.Visible = false
-MainFrame.Active = true
 MainFrame.Draggable = true
-local FrameCorner = Instance.new("UICorner")
-FrameCorner.Parent = MainFrame
 
 UIListLayout.Parent = MainFrame
-UIListLayout.Padding = UDim.new(0, 7)
 UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.Padding = UDim.new(0, 5)
 
 local function createButton(name, callback)
     local btn = Instance.new("TextButton")
     btn.Parent = MainFrame
     btn.Size = UDim2.new(0.9, 0, 0, 40)
     btn.Text = name
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 14
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 8)
-    c.Parent = btn
     btn.MouseButton1Click:Connect(callback)
 end
 
@@ -55,61 +32,72 @@ ToggleButton.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
 
--- 1. УМНЫЙ EXTREME SPEED (Остановка при юзе скиллов)
-_G.ExtremeSpeed = false
-_G.CanMove = true
+-- --- ЛОГИКА SILENT AIM ---
+_G.SilentAim = false
 
-createButton("Extreme Speed: OFF", function()
-    _G.ExtremeSpeed = not _G.ExtremeSpeed
-    game.StarterGui:SetCore("SendNotification", {Title = "Speed", Text = (_G.ExtremeSpeed and "ON" or "OFF")})
+createButton("Silent Aim: OFF", function(self)
+    _G.SilentAim = not _G.SilentAim
+    self.Text = "Silent Aim: " .. (_G.SilentAim and "ON" or "OFF")
 end)
 
--- Отслеживание нажатий Z, X, C, V
-game:GetService("UserInputService").InputBegan:Connect(function(input, proc)
-    if not proc then
-        if input.KeyCode == Enum.KeyCode.Z or input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.C or input.KeyCode == Enum.KeyCode.V then
-            _G.CanMove = false
-            task.wait(0.5) -- Пауза для каста скилла
-            _G.CanMove = true
+-- Функция поиска цели
+local function getClosestPlayer()
+    local target = nil
+    local dist = math.huge
+    for _, v in pairs(game.Players:GetPlayers()) do
+        if v ~= game.Players.LocalPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and v.Character.Humanoid.Health > 0 then
+            local d = (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - v.Character.HumanoidRootPart.Position).Magnitude
+            if d < dist then
+                dist = d
+                target = v
+            end
         end
     end
-end)
+    return target
+end
 
-game:GetService("RunService").Stepped:Connect(function()
-    if _G.ExtremeSpeed and _G.CanMove then
-        pcall(function()
-            local char = game.Players.LocalPlayer.Character
-            local hum = char.Humanoid
-            if hum.MoveDirection.Magnitude > 0 then
-                char:TranslateBy(hum.MoveDirection * 1.6) -- Скорость
+-- Хук метатаблицы (подмена выстрела)
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
+setreadonly(mt, false)
+
+mt.__namecall = newcclosure(function(self, ...)
+    local args = {...}
+    local method = getnamecallmethod()
+
+    if _G.SilentAim and method == "FireServer" then
+        -- Названия ивентов атак в Blox Fruits часто меняются, 
+        -- этот код перехватывает основные триггеры урона
+        local target = getClosestPlayer()
+        if target and target.Character then
+            -- Если это ивент урона, подменяем позицию цели на RootPart врага
+            if self.Name == "RemoteEvent" or self.Name:find("Damage") or self.Name:find("Attack") then
+                return oldNamecall(self, target.Character.HumanoidRootPart.Position, unpack(args))
             end
-        end)
+        end
     end
+    return oldNamecall(self, ...)
+end)
+setreadonly(mt, true)
+
+-- --- ОСТАЛЬНЫЕ ФУНКЦИИ ---
+createButton("Extreme Speed", function()
+    _G.Speed = not _G.Speed
+    game:GetService("RunService").Stepped:Connect(function()
+        if _G.Speed then
+            pcall(function()
+                game.Players.LocalPlayer.Character:TranslateBy(game.Players.LocalPlayer.Character.Humanoid.MoveDirection * 1.5)
+            end)
+        end
+    end)
 end)
 
--- 2. ANTI-STUN (Улучшенный)
 createButton("Anti-Stun", function()
     game:GetService("RunService").Stepped:Connect(function()
         pcall(function()
             local char = game.Players.LocalPlayer.Character
             if char:FindFirstChild("Stun") then char.Stun:Destroy() end
-            if char:FindFirstChild("Busy") then char.Busy:Destroy() end
             if char.Humanoid.Sit then char.Humanoid.Sit = false end
-            -- Убираем замедление при ударах
-            char.Humanoid.WalkSpeed = 16 
         end)
-    end)
-end)
-
--- 3. SILENT AIM (Подготовка)
-createButton("Silent Aim", function()
-    _G.SilentAim = not _G.SilentAim
-    game.StarterGui:SetCore("SendNotification", {Title = "Silent Aim", Text = (_G.SilentAim and "ON" or "OFF")})
-end)
-
--- 4. INF JUMP
-createButton("Inf Jump", function()
-    game:GetService("UserInputService").JumpRequest:Connect(function()
-        game.Players.LocalPlayer.Character.Humanoid:ChangeState("Jumping")
     end)
 end)

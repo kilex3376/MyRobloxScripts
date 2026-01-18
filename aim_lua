@@ -1,62 +1,40 @@
--- 1. Загрузка библиотеки интерфейса
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
--- 2. Создание окна хаба
-local Window = Rayfield:CreateWindow({
-   Name = "MY HUB | BLOX FRUITS",
-   LoadingTitle = "Loading My First Script...",
-   ConfigurationSaving = { Enabled = true, Folder = "MyHubConfig" }
-})
-
--- 3. Создание вкладки
-local Tab = Window:CreateTab("Main PvP", 4483345998) 
-
--- 4. Добавление функции (Аимбот)
-Tab:CreateToggle({
-   Name = "Aimlock (Nearest Player)",
-   CurrentValue = false,
+-- 1. Спидхак (Скорость бега)
+Tab:CreateSlider({
+   Name = "WalkSpeed (Спидхак)",
+   Range = {16, 200},
+   Increment = 1,
+   CurrentValue = 16,
    Callback = function(Value)
-       _G.AimEnabled = Value -- Эта переменная включает/выключает аим
-       if Value then
-           print("Аим включен!")
-           local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
-local Window = Rayfield:CreateWindow({
-   Name = "MY FIRST HUB",
-   LoadingTitle = "Starting...",
-   ConfigurationSaving = { Enabled = false }
-})
-
-local Tab = Window:CreateTab("Combat", 4483345998)
-
-Tab:CreateToggle({
-   Name = "Aimlock Nearest NPC",
-   CurrentValue = false,
-   Callback = function(Value)
-       _G.AimActive = Value
-       while _G.AimActive do
-           task.wait()
-           pcall(function()
-               local closest = nil
-               local dist = math.huge
-               -- Поиск ближайшего врага в Workspace
-               for _, v in pairs(game.Workspace.Enemies:GetChildren()) do
-                   if v:FindFirstChild("HumanoidRootPart") then
-                       local d = (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - v.HumanoidRootPart.Position).magnitude
-                       if d < dist then
-                           dist = d
-                           closest = v
-                       end
-                   end
-               end
-               if closest then
-                   workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, closest.HumanoidRootPart.Position)
-               end
-           end)
-       end
+       game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = Value
    end,
 })
 
-       end
+-- 2. Увеличение Прыжка (JumpPower)
+Tab:CreateSlider({
+   Name = "JumpPower (Высота прыжка)",
+   Range = {50, 300},
+   Increment = 1,
+   CurrentValue = 50,
+   Callback = function(Value)
+       game.Players.LocalPlayer.Character.Humanoid.JumpPower = Value
+       -- Включаем использование JumpPower вместо JumpHeight
+       game.Players.LocalPlayer.Character.Humanoid.UseJumpPower = true
    end,
-}) 
+})
+
+-- 3. Увеличение дистанции Dash (Рывка)
+-- В Blox Fruits это обычно делается через изменение параметров в скриптах игры
+Tab:CreateButton({
+   Name = "Infinite Dash (Беск. рывок)",
+   Callback = function()
+       -- Пример простого обхода кулдауна рывка
+       local old; old = hookmetamethod(game, "__namecall", function(self, ...)
+           local method = getnamecallmethod()
+           if method == "FireServer" and self.Name == "Dash" then
+               -- Тут можно добавить логику для частого использования
+           end
+           return old(self, ...)
+       end)
+       print("Dash модифицирован!")
+   end,
+})

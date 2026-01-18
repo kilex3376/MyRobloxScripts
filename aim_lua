@@ -1,50 +1,115 @@
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+-- Создание интерфейса
+local ScreenGui = Instance.new("ScreenGui")
+local ToggleButton = Instance.new("TextButton")
+local MainFrame = Instance.new("Frame")
+local UIListLayout = Instance.new("UIListLayout")
 
-local Window = Rayfield:CreateWindow({
-   Name = "MY HUB | BLOX FRUITS",
-   LoadingTitle = "Loading...",
-   ConfigurationSaving = { Enabled = false }
-})
+ScreenGui.Parent = game.CoreGui
+ScreenGui.Name = "MyMobileHub"
 
-local Tab = Window:CreateTab("Main", 4483345998)
+-- Плавающая кнопка
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ToggleButton.Position = UDim2.new(0, 10, 0, 150)
+ToggleButton.Size = UDim2.new(0, 70, 0, 35)
+ToggleButton.Text = "MENU"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Draggable = true
+ToggleButton.Active = true
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.Parent = ToggleButton
 
--- СКОРОСТЬ (Увеличил до 500)
-Tab:CreateSlider({
-   Name = "WalkSpeed (Спидхак)",
-   Range = {16, 500},
-   Increment = 1,
-   CurrentValue = 16,
-   Callback = function(Value)
-       game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = Value
-   end,
-})
+-- Основное меню
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.Position = UDim2.new(0.5, -90, 0.5, -120)
+MainFrame.Size = UDim2.new(0, 180, 0, 300)
+MainFrame.Visible = false
+MainFrame.Active = true
+MainFrame.Draggable = true
+local FrameCorner = Instance.new("UICorner")
+FrameCorner.Parent = MainFrame
 
--- ПРЫЖОК (Увеличил до 500)
-Tab:CreateSlider({
-   Name = "JumpPower (Высота)",
-   Range = {50, 500},
-   Increment = 1,
-   CurrentValue = 50,
-   Callback = function(Value)
-       game.Players.LocalPlayer.Character.Humanoid.JumpPower = Value
-       game.Players.LocalPlayer.Character.Humanoid.UseJumpPower = true
-   end,
-})
+UIListLayout.Parent = MainFrame
+UIListLayout.Padding = UDim.new(0, 7)
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
--- ДАЛЬНОСТЬ ДЭША (Через усиление импульса)
-Tab:CreateButton({
-   Name = "Buff Dash (Усилить Рывок)",
-   Callback = function()
-       local UserInputService = game:GetService("UserInputService")
-       UserInputService.InputBegan:Connect(function(input, gameProcessed)
-           if not gameProcessed and input.KeyCode == Enum.KeyCode.Q then -- Когда жмешь рывок (Q)
-               local hum = game.Players.LocalPlayer.Character.Humanoid
-               local oldSpeed = hum.WalkSpeed
-               hum.WalkSpeed = oldSpeed * 5 -- Временно ускоряем в 5 раз
-               task.wait(0.2)
-               hum.WalkSpeed = oldSpeed
-           end
-       end)
-       print("Dash buffed!")
-   end,
-})
+local function createButton(name, callback)
+    local btn = Instance.new("TextButton")
+    btn.Parent = MainFrame
+    btn.Size = UDim2.new(0.9, 0, 0, 40)
+    btn.Text = name
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 14
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 8)
+    c.Parent = btn
+    btn.MouseButton1Click:Connect(callback)
+end
+
+ToggleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- 1. УМНЫЙ EXTREME SPEED (Остановка при юзе скиллов)
+_G.ExtremeSpeed = false
+_G.CanMove = true
+
+createButton("Extreme Speed: OFF", function()
+    _G.ExtremeSpeed = not _G.ExtremeSpeed
+    game.StarterGui:SetCore("SendNotification", {Title = "Speed", Text = (_G.ExtremeSpeed and "ON" or "OFF")})
+end)
+
+-- Отслеживание нажатий Z, X, C, V
+game:GetService("UserInputService").InputBegan:Connect(function(input, proc)
+    if not proc then
+        if input.KeyCode == Enum.KeyCode.Z or input.KeyCode == Enum.KeyCode.X or input.KeyCode == Enum.KeyCode.C or input.KeyCode == Enum.KeyCode.V then
+            _G.CanMove = false
+            task.wait(0.5) -- Пауза для каста скилла
+            _G.CanMove = true
+        end
+    end
+end)
+
+game:GetService("RunService").Stepped:Connect(function()
+    if _G.ExtremeSpeed and _G.CanMove then
+        pcall(function()
+            local char = game.Players.LocalPlayer.Character
+            local hum = char.Humanoid
+            if hum.MoveDirection.Magnitude > 0 then
+                char:TranslateBy(hum.MoveDirection * 1.6) -- Скорость
+            end
+        end)
+    end
+end)
+
+-- 2. ANTI-STUN (Улучшенный)
+createButton("Anti-Stun", function()
+    game:GetService("RunService").Stepped:Connect(function()
+        pcall(function()
+            local char = game.Players.LocalPlayer.Character
+            if char:FindFirstChild("Stun") then char.Stun:Destroy() end
+            if char:FindFirstChild("Busy") then char.Busy:Destroy() end
+            if char.Humanoid.Sit then char.Humanoid.Sit = false end
+            -- Убираем замедление при ударах
+            char.Humanoid.WalkSpeed = 16 
+        end)
+    end)
+end)
+
+-- 3. SILENT AIM (Подготовка)
+createButton("Silent Aim", function()
+    _G.SilentAim = not _G.SilentAim
+    game.StarterGui:SetCore("SendNotification", {Title = "Silent Aim", Text = (_G.SilentAim and "ON" or "OFF")})
+end)
+
+-- 4. INF JUMP
+createButton("Inf Jump", function()
+    game:GetService("UserInputService").JumpRequest:Connect(function()
+        game.Players.LocalPlayer.Character.Humanoid:ChangeState("Jumping")
+    end)
+end)

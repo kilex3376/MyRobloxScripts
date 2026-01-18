@@ -1,4 +1,44 @@
--- 1. Спидхак (Скорость бега)
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "MY HUB | BLOX FRUITS",
+   LoadingTitle = "Loading...",
+   ConfigurationSaving = { Enabled = false }
+})
+
+local Tab = Window:CreateTab("Main", 4483345998)
+
+-- ТВОЙ СТАРЫЙ АИМБОТ
+Tab:CreateToggle({
+   Name = "Aimlock Nearest NPC",
+   CurrentValue = false,
+   Callback = function(Value)
+       _G.AimActive = Value
+       task.spawn(function()
+           while _G.AimActive do
+               task.wait()
+               pcall(function()
+                   local closest = nil
+                   local dist = math.huge
+                   for _, v in pairs(game.Workspace.Enemies:GetChildren()) do
+                       if v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+                           local d = (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - v.HumanoidRootPart.Position).magnitude
+                           if d < dist then
+                               dist = d
+                               closest = v
+                           end
+                       end
+                   end
+                   if closest then
+                       workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, closest.HumanoidRootPart.Position)
+                   end
+               end)
+           end
+       end)
+   end,
+})
+
+-- НОВЫЕ ФУНКЦИИ (SPEED / JUMP / DASH)
 Tab:CreateSlider({
    Name = "WalkSpeed (Спидхак)",
    Range = {16, 200},
@@ -9,7 +49,6 @@ Tab:CreateSlider({
    end,
 })
 
--- 2. Увеличение Прыжка (JumpPower)
 Tab:CreateSlider({
    Name = "JumpPower (Высота прыжка)",
    Range = {50, 300},
@@ -17,21 +56,17 @@ Tab:CreateSlider({
    CurrentValue = 50,
    Callback = function(Value)
        game.Players.LocalPlayer.Character.Humanoid.JumpPower = Value
-       -- Включаем использование JumpPower вместо JumpHeight
        game.Players.LocalPlayer.Character.Humanoid.UseJumpPower = true
    end,
 })
 
--- 3. Увеличение дистанции Dash (Рывка)
--- В Blox Fruits это обычно делается через изменение параметров в скриптах игры
 Tab:CreateButton({
    Name = "Infinite Dash (Беск. рывок)",
    Callback = function()
-       -- Пример простого обхода кулдауна рывка
        local old; old = hookmetamethod(game, "__namecall", function(self, ...)
            local method = getnamecallmethod()
            if method == "FireServer" and self.Name == "Dash" then
-               -- Тут можно добавить логику для частого использования
+               -- Логика обхода
            end
            return old(self, ...)
        end)

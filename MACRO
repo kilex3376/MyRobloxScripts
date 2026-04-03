@@ -513,7 +513,7 @@ playBtn.MouseButton1Click:Connect(function()
                     if not ok2 then
                         errors += 1
                         warn("[Macro] Upgrade failed step "..i)
-                    end  elseif step.action == "upgrade" then
+                    end else if step.action == "upgrade" then
                 local tower = created[step.towerIndex]
                 if tower then
                     local ok2 = safeInvoke(UpgradeTower, 5, tower)

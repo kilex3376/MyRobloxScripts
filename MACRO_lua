@@ -1,0 +1,283 @@
+-- // Macro System v2.1 Fixed Timing
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local recording = false
+local playing = false
+local macro = {}
+local placed = {}
+local startTime = 0
+local playbackSpeed = 1
+
+local SpawnTower = ReplicatedStorage.Functions:WaitForChild("SpawnNewTower")
+local UpgradeTower = ReplicatedStorage.Functions:WaitForChild("UpgradeTower")
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "MacroSystem"
+gui.ResetOnSpawn = false
+gui.Parent = game.CoreGui
+
+local frame = Instance.new("Frame")
+frame.Parent = gui
+frame.Size = UDim2.new(0,180,0,285)
+frame.Position = UDim2.new(0,15,0.5,-140)
+frame.BackgroundColor3 = Color3.fromRGB(25,25,35)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
+
+local title = Instance.new("TextLabel")
+title.Parent = frame
+title.Size = UDim2.new(1,0,0,28)
+title.BackgroundTransparency = 1
+title.Text = "Macro System"
+title.TextColor3 = Color3.new(1,1,1)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 13
+
+local status = Instance.new("TextLabel")
+status.Parent = frame
+status.Position = UDim2.new(0,10,0,28)
+status.Size = UDim2.new(1,-20,0,18)
+status.BackgroundTransparency = 1
+status.Text = "Ready"
+status.TextColor3 = Color3.fromRGB(150,150,255)
+status.Font = Enum.Font.Gotham
+status.TextSize = 11
+status.TextXAlignment = Enum.TextXAlignment.Left
+
+local function setStatus(txt,col)
+    status.Text = txt
+    status.TextColor3 = col or Color3.new(1,1,1)
+end
+
+local function makeButton(text,y)
+    local b = Instance.new("TextButton")
+    b.Parent = frame
+    b.Size = UDim2.new(0,160,0,30)
+    b.Position = UDim2.new(0,10,0,y)
+    b.BackgroundColor3 = Color3.fromRGB(35,35,50)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.Text = text
+    b.BorderSizePixel = 0
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    return b
+end
+
+local recordBtn = makeButton("Start Record",55)
+local stopBtn = makeButton("Stop Record",90)
+local saveBtn = makeButton("Save Macro",125)
+local loadBtn = makeButton("Load Macro",160)
+local playBtn = makeButton("Play Macro",195)
+
+local speedText = Instance.new("TextLabel")
+speedText.Parent = frame
+speedText.Position = UDim2.new(0,10,0,235)
+speedText.Size = UDim2.new(1,-20,0,15)
+speedText.BackgroundTransparency = 1
+speedText.Text = "Speed: 1.00x"
+speedText.TextColor3 = Color3.fromRGB(180,180,255)
+speedText.Font = Enum.Font.Gotham
+speedText.TextSize = 10
+
+local slider = Instance.new("Frame")
+slider.Parent = frame
+slider.Position = UDim2.new(0,10,0,255)
+slider.Size = UDim2.new(0,160,0,8)
+slider.BackgroundColor3 = Color3.fromRGB(45,45,60)
+slider.BorderSizePixel = 0
+Instance.new("UICorner", slider).CornerRadius = UDim.new(1,0)
+
+local fill = Instance.new("Frame")
+fill.Parent = slider
+fill.Size = UDim2.new(0.27,0,1,0)
+fill.BackgroundColor3 = Color3.fromRGB(100,120,255)
+fill.BorderSizePixel = 0
+Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
+
+local knob = Instance.new("Frame")
+knob.Parent = slider
+knob.Size = UDim2.new(0,14,0,14)
+knob.Position = UDim2.new(0.27,-7,0.5,-7)
+knob.BackgroundColor3 = Color3.new(1,1,1)
+knob.BorderSizePixel = 0
+Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
+
+local dragging = false
+knob.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(i)
+    if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+        local rel = math.clamp((i.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X,0,1)
+        fill.Size = UDim2.new(rel,0,1,0)
+        knob.Position = UDim2.new(rel,-7,0.5,-7)
+        playbackSpeed = math.floor((0.25 + rel * 2.75) * 100) / 100
+        speedText.Text = "Speed: " .. string.format("%.2f", playbackSpeed) .. "x"
+    end
+end)
+
+local old
+old = hookmetamethod(game,"__namecall",function(self,...)
+    local args = {...}
+    local method = getnamecallmethod()
+
+    if not checkcaller() and recording then
+        if tostring(self) == "SpawnNewTower" and method == "InvokeServer" then
+            local ok,result = pcall(old,self,...)
+            if ok and typeof(args[2]) == "CFrame" then
+                local idx = #placed + 1
+                placed[idx] = result
+
+                table.insert(macro,{
+                    action = "spawn",
+                    towerIndex = idx,
+                    unitUUID = tostring(args[1]),
+                    time = tick() - startTime,
+                    pos = {
+                        x = args[2].X,
+                        y = args[2].Y,
+                        z = args[2].Z
+                    }
+                })
+
+                setStatus("Spawn #"..idx, Color3.fromRGB(0,255,120))
+            end
+            return result
+        end
+
+        if tostring(self) == "UpgradeTower" and method == "InvokeServer" then
+            local target = args[1]
+            for i,v in pairs(placed) do
+                if v == target then
+                    table.insert(macro,{
+                        action = "upgrade",
+                        towerIndex = i,
+                        time = tick() - startTime
+                    })
+                    setStatus("Upgrade #"..i, Color3.fromRGB(255,200,0))
+                    break
+                end
+            end
+        end
+    end
+
+    return old(self,...)
+end)
+
+recordBtn.MouseButton1Click:Connect(function()
+    recording = true
+    macro = {}
+    placed = {}
+    startTime = tick()
+    setStatus("Recording...", Color3.fromRGB(255,80,80))
+end)
+
+stopBtn.MouseButton1Click:Connect(function()
+    recording = false
+    setStatus("Stopped: "..#macro.." steps", Color3.fromRGB(255,200,0))
+end)
+
+saveBtn.MouseButton1Click:Connect(function()
+    writefile("macro.json", HttpService:JSONEncode(macro))
+    setStatus("Saved macro.json", Color3.fromRGB(0,255,120))
+end)
+
+loadBtn.MouseButton1Click:Connect(function()
+    if isfile("macro.json") then
+        macro = HttpService:JSONDecode(readfile("macro.json"))
+        setStatus("Loaded "..#macro.." steps", Color3.fromRGB(100,150,255))
+    else
+        setStatus("macro.json not found", Color3.fromRGB(255,80,80))
+    end
+end)
+
+playBtn.MouseButton1Click:Connect(function()
+    if playing or #macro == 0 then return end
+
+    playing = true
+    setStatus("Playing...", Color3.fromRGB(100,150,255))
+
+    task.spawn(function()
+        local created = {}
+        local beginTime = tick()
+        local errors = 0
+
+        for i,step in ipairs(macro) do
+            if not playing then break end
+
+            local exactTime = beginTime + (step.time / playbackSpeed)
+            repeat task.wait() until tick() >= exactTime
+
+            if step.action == "spawn" then
+                local ok,res = pcall(function()
+                    return SpawnTower:InvokeServer(
+                        step.unitUUID,
+                        CFrame.new(step.pos.x, step.pos.y, step.pos.z)
+                    )
+                end)
+
+                if ok and res then
+                    created[step.towerIndex] = res
+
+                    local t = tick()
+                    while tick() - t < 0.18 do
+                        task.wait()
+                    end
+                else
+                    errors += 1
+                end
+
+            elseif step.action == "upgrade" then
+                local tower = created[step.towerIndex]
+
+                if tower then
+                    local tries = 0
+                    while tries < 15 and (not tower or not tower.Parent) do
+                        tries += 1
+                        task.wait(0.05)
+                    end
+
+                    local ok = pcall(function()
+                        UpgradeTower:InvokeServer(tower)
+                    end)
+
+                    if not ok then
+                        errors += 1
+                        task.wait(0.25)
+
+                        pcall(function()
+                            UpgradeTower:InvokeServer(tower)
+                        end)
+                    end
+                else
+                    errors += 1
+                end
+            end
+        end
+
+        playing = false
+
+        if errors == 0 then
+            setStatus("Done", Color3.fromRGB(0,255,120))
+        else
+            setStatus("Done with "..errors.." errors", Color3.fromRGB(255,180,0))
+        end
+    end)
+end)

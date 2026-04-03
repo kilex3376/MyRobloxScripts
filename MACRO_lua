@@ -1,283 +1,171 @@
--- // Macro System v2.1 Fixed Timing
-local HttpService = game:GetService("HttpService")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local recording = false
-local playing = false
-local macro = {}
-local placed = {}
-local startTime = 0
-local playbackSpeed = 1
-
-local SpawnTower = ReplicatedStorage.Functions:WaitForChild("SpawnNewTower")
-local UpgradeTower = ReplicatedStorage.Functions:WaitForChild("UpgradeTower")
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "MacroSystem"
-gui.ResetOnSpawn = false
-gui.Parent = game.CoreGui
-
-local frame = Instance.new("Frame")
-frame.Parent = gui
-frame.Size = UDim2.new(0,180,0,285)
-frame.Position = UDim2.new(0,15,0.5,-140)
-frame.BackgroundColor3 = Color3.fromRGB(25,25,35)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Draggable = true
-
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
-
-local title = Instance.new("TextLabel")
-title.Parent = frame
-title.Size = UDim2.new(1,0,0,28)
-title.BackgroundTransparency = 1
-title.Text = "Macro System"
-title.TextColor3 = Color3.new(1,1,1)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 13
-
-local status = Instance.new("TextLabel")
-status.Parent = frame
-status.Position = UDim2.new(0,10,0,28)
-status.Size = UDim2.new(1,-20,0,18)
-status.BackgroundTransparency = 1
-status.Text = "Ready"
-status.TextColor3 = Color3.fromRGB(150,150,255)
-status.Font = Enum.Font.Gotham
-status.TextSize = 11
-status.TextXAlignment = Enum.TextXAlignment.Left
-
-local function setStatus(txt,col)
-    status.Text = txt
-    status.TextColor3 = col or Color3.new(1,1,1)
+local HS=game:GetService("HttpService")
+local TS=game:GetService("TweenService")
+local UIS=game:GetService("UserInputService")
+local RS=game:GetService("RunService")
+local RSt=game:GetService("ReplicatedStorage")
+local ST,UT,rec,play,t0,placed,spd,sl=nil,nil,false,false,0,{},1.0,nil
+local SLOTS,slots,cur=3,{},1
+for i=1,SLOTS do
+	slots[i]={name="Macro "..i,steps={}}
+	if isfile and isfile("ms"..i..".json") then
+		local ok,d=pcall(function()return HS:JSONDecode(readfile("ms"..i..".json"))end)
+		if ok and d then slots[i].name=d.name or"Macro "..i slots[i].steps=d.steps or{} end
+	end
 end
-
-local function makeButton(text,y)
-    local b = Instance.new("TextButton")
-    b.Parent = frame
-    b.Size = UDim2.new(0,160,0,30)
-    b.Position = UDim2.new(0,10,0,y)
-    b.BackgroundColor3 = Color3.fromRGB(35,35,50)
-    b.TextColor3 = Color3.new(1,1,1)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 11
-    b.Text = text
-    b.BorderSizePixel = 0
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
-    return b
+task.defer(function()
+	local ok,f=pcall(function()return RSt:WaitForChild("Functions")end)
+	if not ok or not f then return end
+	ST=f:FindFirstChild("SpawnNewTower")or f:WaitForChild("SpawnNewTower")
+	UT=f:FindFirstChild("UpgradeTower")or f:WaitForChild("UpgradeTower")
+	if sl then sl.Text="Ready" sl.TextColor3=Color3.fromRGB(34,197,94) end
+end)
+local function tw(o,p,d)TS:Create(o,TweenInfo.new(d or.15,Enum.EasingStyle.Quad),p):Play()end
+local function log(m,c)if sl then sl.Text=m sl.TextColor3=c or Color3.fromRGB(200,200,255)end print("[M]"..m)end
+local function save(i)if writefile then pcall(function()writefile("ms"..i..".json",HS:JSONEncode({name=slots[i].name,steps=slots[i].steps}))end)end end
+local function inv(r,n,...)local a={...}for k=1,n do local ok,res=pcall(function()return r:InvokeServer(table.unpack(a))end)if ok then return true,res end task.wait(.15*k)end return false,nil end
+local gui=Instance.new("ScreenGui")
+gui.Name="MS" gui.ResetOnSpawn=false gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling gui.IgnoreGuiInset=true
+if syn and syn.protect_gui then syn.protect_gui(gui)end gui.Parent=game.CoreGui
+local function mk(cls,props)local o=Instance.new(cls)for k,v in pairs(props)do o[k]=v end return o end
+local function corner(o,r)mk("UICorner",{CornerRadius=UDim.new(0,r or 8),Parent=o})end
+local function stroke(o,c,t)local s=mk("UIStroke",{Color=c,Thickness=t or 1,Parent=o})return s end
+local tog=mk("TextButton",{Parent=gui,Size=UDim2.new(0,36,0,36),Position=UDim2.new(0,16,.5,-18),BackgroundColor3=Color3.fromRGB(99,102,241),BorderSizePixel=0,Text="M",TextColor3=Color3.new(1,1,1),TextSize=15,Font=Enum.Font.GothamBold,ZIndex=10,AutoButtonColor=false})
+corner(tog)
+local fr=mk("Frame",{Name="Main",Parent=gui,Size=UDim2.new(0,210,0,420),Position=UDim2.new(0,60,.5,-210),BackgroundColor3=Color3.fromRGB(18,18,24),BorderSizePixel=0,Active=true,Draggable=true,ClipsDescendants=true,Visible=true})
+corner(fr,10)
+mk("Frame",{Parent=fr,Size=UDim2.new(1,0,0,3),BackgroundColor3=Color3.fromRGB(99,102,241),BorderSizePixel=0})
+mk("TextLabel",{Parent=fr,Size=UDim2.new(1,0,0,36),Position=UDim2.new(0,0,0,6),BackgroundTransparency=1,Text="MACRO SYSTEM",TextColor3=Color3.fromRGB(220,220,255),TextSize=13,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Center})
+mk("Frame",{Parent=fr,Size=UDim2.new(.9,0,0,1),Position=UDim2.new(.05,0,0,44),BackgroundColor3=Color3.fromRGB(50,50,70),BorderSizePixel=0})
+sl=mk("TextLabel",{Parent=fr,Size=UDim2.new(1,-20,0,20),Position=UDim2.new(0,10,0,48),BackgroundTransparency=1,Text="Loading...",TextColor3=Color3.fromRGB(130,130,200),TextSize=11,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Left})
+mk("TextLabel",{Parent=fr,Size=UDim2.new(1,-20,0,16),Position=UDim2.new(0,10,0,72),BackgroundTransparency=1,Text="SLOTS",TextColor3=Color3.fromRGB(80,80,130),TextSize=10,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left})
+local SC={Color3.fromRGB(99,102,241),Color3.fromRGB(34,197,94),Color3.fromRGB(234,179,8)}
+local sbtns,slbls={},{}
+local function ref()
+	for i=1,SLOTS do
+		local b,act=sbtns[i],i==cur
+		tw(b,{BackgroundColor3=act and Color3.fromRGB(40,40,70)or Color3.fromRGB(26,26,38)})
+		b.UIStroke.Thickness=act and 1.5 or 1
+		b.UIStroke.Color=act and SC[i]or Color3.fromRGB(45,45,65)
+		slbls[i].Text=slots[i].name.."("..#slots[i].steps..")"
+		slbls[i].TextColor3=act and Color3.fromRGB(220,220,255)or Color3.fromRGB(120,120,160)
+	end
 end
-
-local recordBtn = makeButton("Start Record",55)
-local stopBtn = makeButton("Stop Record",90)
-local saveBtn = makeButton("Save Macro",125)
-local loadBtn = makeButton("Load Macro",160)
-local playBtn = makeButton("Play Macro",195)
-
-local speedText = Instance.new("TextLabel")
-speedText.Parent = frame
-speedText.Position = UDim2.new(0,10,0,235)
-speedText.Size = UDim2.new(1,-20,0,15)
-speedText.BackgroundTransparency = 1
-speedText.Text = "Speed: 1.00x"
-speedText.TextColor3 = Color3.fromRGB(180,180,255)
-speedText.Font = Enum.Font.Gotham
-speedText.TextSize = 10
-
-local slider = Instance.new("Frame")
-slider.Parent = frame
-slider.Position = UDim2.new(0,10,0,255)
-slider.Size = UDim2.new(0,160,0,8)
-slider.BackgroundColor3 = Color3.fromRGB(45,45,60)
-slider.BorderSizePixel = 0
-Instance.new("UICorner", slider).CornerRadius = UDim.new(1,0)
-
-local fill = Instance.new("Frame")
-fill.Parent = slider
-fill.Size = UDim2.new(0.27,0,1,0)
-fill.BackgroundColor3 = Color3.fromRGB(100,120,255)
-fill.BorderSizePixel = 0
-Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
-
-local knob = Instance.new("Frame")
-knob.Parent = slider
-knob.Size = UDim2.new(0,14,0,14)
-knob.Position = UDim2.new(0.27,-7,0.5,-7)
-knob.BackgroundColor3 = Color3.new(1,1,1)
-knob.BorderSizePixel = 0
-Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
-
-local dragging = false
-knob.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-    end
+for i=1,SLOTS do
+	local b=mk("TextButton",{Parent=fr,Size=UDim2.new(0,56,0,34),Position=UDim2.new(0,10+(i-1)*66,0,90),BackgroundColor3=Color3.fromRGB(26,26,38),BorderSizePixel=0,Text="",AutoButtonColor=false})
+	corner(b,7)
+	local s=stroke(b,Color3.fromRGB(45,45,65))s.Name="UIStroke"
+	local l=mk("TextLabel",{Parent=b,Size=UDim2.new(1,-6,1,0),Position=UDim2.new(0,3,0,0),BackgroundTransparency=1,Text=slots[i].name,TextColor3=Color3.fromRGB(120,120,160),TextSize=10,Font=Enum.Font.GothamBold,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Center})
+	sbtns[i]=b slbls[i]=l
+	b.MouseButton1Click:Connect(function()cur=i ref()log("Slot "..i..": "..slots[i].name,SC[i])end)
+end
+local rb=mk("TextBox",{Parent=fr,Size=UDim2.new(0,170,0,26),Position=UDim2.new(0,20,0,130),BackgroundColor3=Color3.fromRGB(28,28,42),BorderSizePixel=0,TextColor3=Color3.fromRGB(200,200,255),PlaceholderText="Rename slot...",PlaceholderColor3=Color3.fromRGB(70,70,100),Text="",TextSize=11,Font=Enum.Font.Gotham,ClearTextOnFocus=false})
+corner(rb,6)stroke(rb,Color3.fromRGB(60,60,90))
+rb.FocusLost:Connect(function()local n=rb.Text:match("^%s*(.-)%s*$")if n and#n>0 then slots[cur].name=n save(cur)ref()log("Renamed: "..n,Color3.fromRGB(200,200,255))end rb.Text=""end)
+mk("Frame",{Parent=fr,Size=UDim2.new(.9,0,0,1),Position=UDim2.new(.05,0,0,164),BackgroundColor3=Color3.fromRGB(50,50,70),BorderSizePixel=0})
+local spLbl=mk("TextLabel",{Parent=fr,Size=UDim2.new(1,-20,0,18),Position=UDim2.new(0,10,0,168),BackgroundTransparency=1,Text="Speed: 1.0x",TextColor3=Color3.fromRGB(99,102,241),TextSize=11,Font=Enum.Font.GothamBold,TextXAlignment=Enum.TextXAlignment.Left})
+local sbg=mk("Frame",{Parent=fr,Size=UDim2.new(0,170,0,8),Position=UDim2.new(0,20,0,190),BackgroundColor3=Color3.fromRGB(40,40,60),BorderSizePixel=0})corner(sbg,10)
+local sf=mk("Frame",{Parent=sbg,Size=UDim2.new(.5,0,1,0),BackgroundColor3=Color3.fromRGB(99,102,241),BorderSizePixel=0})corner(sf,10)
+local sk=mk("Frame",{Parent=sbg,Size=UDim2.new(0,16,0,16),Position=UDim2.new(.5,-8,.5,-8),BackgroundColor3=Color3.fromRGB(200,200,255),BorderSizePixel=0})corner(sk,10)
+local drag=false
+sk.InputBegan:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true end end)
+UIS.InputEnded:Connect(function(i)if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end end)
+UIS.InputChanged:Connect(function(i)
+	if drag and i.UserInputType==Enum.UserInputType.MouseMovement then
+		local r=math.clamp((i.Position.X-sbg.AbsolutePosition.X)/sbg.AbsoluteSize.X,0,1)
+		spd=math.floor((0.25+r*2.75)*4+.5)/4
+		sf.Size=UDim2.new(r,0,1,0)sk.Position=UDim2.new(r,-8,.5,-8)
+		spLbl.Text=string.format("Speed: %.2fx",spd)
+	end
 end)
-
-UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = false
-    end
+local function btn(txt,y,sc)
+	local b=mk("TextButton",{Parent=fr,Size=UDim2.new(0,170,0,32),Position=UDim2.new(0,20,0,y),BackgroundColor3=Color3.fromRGB(32,32,48),BorderSizePixel=0,TextColor3=Color3.fromRGB(220,220,255),Text=txt,TextSize=12,Font=Enum.Font.GothamSemibold,AutoButtonColor=false})
+	corner(b,7)local s=stroke(b,sc or Color3.fromRGB(60,60,90))
+	b.MouseEnter:Connect(function()tw(b,{BackgroundColor3=Color3.fromRGB(50,50,80)})end)
+	b.MouseLeave:Connect(function()tw(b,{BackgroundColor3=Color3.fromRGB(32,32,48)})end)
+	b.MouseButton1Down:Connect(function()tw(b,{BackgroundColor3=Color3.fromRGB(70,70,110)})end)
+	b.MouseButton1Up:Connect(function()tw(b,{BackgroundColor3=Color3.fromRGB(50,50,80)})end)
+	return b,s
+end
+local recBtn,recStk=btn("Start Record",210,Color3.fromRGB(239,68,68))
+local stpBtn=btn("Stop Record",248,Color3.fromRGB(234,179,8))
+local savBtn=btn("Save Macro",286,Color3.fromRGB(34,197,94))
+local lodBtn=btn("Load Macro",324,Color3.fromRGB(59,130,246))
+local plyBtn,plyStk=btn("Play Macro",362,Color3.fromRGB(99,102,241))
+local cnt=mk("TextLabel",{Parent=fr,Size=UDim2.new(1,-20,0,18),Position=UDim2.new(0,10,0,400),BackgroundTransparency=1,Text="Steps: 0",TextColor3=Color3.fromRGB(80,80,120),TextSize=10,Font=Enum.Font.Gotham,TextXAlignment=Enum.TextXAlignment.Center})
+local function upd()cnt.Text="Steps: "..#slots[cur].steps end
+ref()
+tog.MouseEnter:Connect(function()tw(tog,{BackgroundColor3=Color3.fromRGB(120,124,255)})end)
+tog.MouseLeave:Connect(function()tw(tog,{BackgroundColor3=fr.Visible and Color3.fromRGB(99,102,241)or Color3.fromRGB(60,60,90)})end)
+tog.MouseButton1Click:Connect(function()fr.Visible=not fr.Visible tog.Text=fr.Visible and"M"or">" tw(tog,{BackgroundColor3=fr.Visible and Color3.fromRGB(99,102,241)or Color3.fromRGB(60,60,90)})end)
+local pc2=nil
+local function pulse()local t=0 pc2=RS.Heartbeat:Connect(function(dt)t+=dt local a=(math.sin(t*4)+1)/2 recStk.Color=Color3.fromRGB(239,math.floor(68*a),math.floor(68*a))end)end
+local function unpulse()if pc2 then pc2:Disconnect()pc2=nil end recStk.Color=Color3.fromRGB(239,68,68)end
+local old old=hookmetamethod(game,"__namecall",function(self,...)
+	local args,m={...},getnamecallmethod()
+	if not checkcaller()and rec then
+		local nm=tostring(self)
+		if nm=="SpawnNewTower"and m=="InvokeServer"then
+			local ok,res=pcall(old,self,...)if not ok then return end
+			local cf=args[2]if typeof(cf)~="CFrame"then return res end
+			local idx=#placed+1 placed[idx]=res
+			table.insert(slots[cur].steps,{action="spawn",towerIndex=idx,unitUUID=tostring(args[1]),time=tick()-t0,pos={x=cf.X,y=cf.Y,z=cf.Z}})
+			upd()log("Spawn #"..idx,Color3.fromRGB(34,197,94))return res
+		end
+		if nm=="UpgradeTower"and m=="InvokeServer"then
+			local tw2=args[1]for i,v in pairs(placed)do if v==tw2 then
+				table.insert(slots[cur].steps,{action="upgrade",towerIndex=i,time=tick()-t0})
+				upd()log("Upgrade #"..i,Color3.fromRGB(234,179,8))break
+			end end
+		end
+	end
+	return old(self,...)
 end)
-
-UserInputService.InputChanged:Connect(function(i)
-    if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
-        local rel = math.clamp((i.Position.X - slider.AbsolutePosition.X) / slider.AbsoluteSize.X,0,1)
-        fill.Size = UDim2.new(rel,0,1,0)
-        knob.Position = UDim2.new(rel,-7,0.5,-7)
-        playbackSpeed = math.floor((0.25 + rel * 2.75) * 100) / 100
-        speedText.Text = "Speed: " .. string.format("%.2f", playbackSpeed) .. "x"
-    end
+recBtn.MouseButton1Click:Connect(function()
+	if play then log("Stop playback first!",Color3.fromRGB(239,68,68))return end
+	rec=true slots[cur].steps={} placed={} t0=tick() pulse()upd()
+	log("Recording "..cur.."...",Color3.fromRGB(239,68,68))tw(recBtn,{BackgroundColor3=Color3.fromRGB(80,30,30)})
 end)
-
-local old
-old = hookmetamethod(game,"__namecall",function(self,...)
-    local args = {...}
-    local method = getnamecallmethod()
-
-    if not checkcaller() and recording then
-        if tostring(self) == "SpawnNewTower" and method == "InvokeServer" then
-            local ok,result = pcall(old,self,...)
-            if ok and typeof(args[2]) == "CFrame" then
-                local idx = #placed + 1
-                placed[idx] = result
-
-                table.insert(macro,{
-                    action = "spawn",
-                    towerIndex = idx,
-                    unitUUID = tostring(args[1]),
-                    time = tick() - startTime,
-                    pos = {
-                        x = args[2].X,
-                        y = args[2].Y,
-                        z = args[2].Z
-                    }
-                })
-
-                setStatus("Spawn #"..idx, Color3.fromRGB(0,255,120))
-            end
-            return result
-        end
-
-        if tostring(self) == "UpgradeTower" and method == "InvokeServer" then
-            local target = args[1]
-            for i,v in pairs(placed) do
-                if v == target then
-                    table.insert(macro,{
-                        action = "upgrade",
-                        towerIndex = i,
-                        time = tick() - startTime
-                    })
-                    setStatus("Upgrade #"..i, Color3.fromRGB(255,200,0))
-                    break
-                end
-            end
-        end
-    end
-
-    return old(self,...)
+stpBtn.MouseButton1Click:Connect(function()
+	if not rec then return end rec=false unpulse()
+	log("Stopped - "..#slots[cur].steps.." steps",Color3.fromRGB(234,179,8))
+	tw(recBtn,{BackgroundColor3=Color3.fromRGB(32,32,48)})
 end)
-
-recordBtn.MouseButton1Click:Connect(function()
-    recording = true
-    macro = {}
-    placed = {}
-    startTime = tick()
-    setStatus("Recording...", Color3.fromRGB(255,80,80))
+savBtn.MouseButton1Click:Connect(function()
+	if#slots[cur].steps==0 then log("Nothing to save!",Color3.fromRGB(239,68,68))return end
+	save(cur)log("Saved slot "..cur,Color3.fromRGB(34,197,94))
 end)
-
-stopBtn.MouseButton1Click:Connect(function()
-    recording = false
-    setStatus("Stopped: "..#macro.." steps", Color3.fromRGB(255,200,0))
+lodBtn.MouseButton1Click:Connect(function()
+	local f="ms"..cur..".json"
+	if not isfile(f)then log("No save for slot "..cur,Color3.fromRGB(239,68,68))return end
+	local ok,d=pcall(function()return HS:JSONDecode(readfile(f))end)
+	if ok and d then slots[cur].name=d.name or"Macro "..cur slots[cur].steps=d.steps or{} ref()upd()log("Loaded "..#slots[cur].steps.." steps",Color3.fromRGB(59,130,246))
+	else log("Load failed!",Color3.fromRGB(239,68,68))end
 end)
-
-saveBtn.MouseButton1Click:Connect(function()
-    writefile("macro.json", HttpService:JSONEncode(macro))
-    setStatus("Saved macro.json", Color3.fromRGB(0,255,120))
-end)
-
-loadBtn.MouseButton1Click:Connect(function()
-    if isfile("macro.json") then
-        macro = HttpService:JSONDecode(readfile("macro.json"))
-        setStatus("Loaded "..#macro.." steps", Color3.fromRGB(100,150,255))
-    else
-        setStatus("macro.json not found", Color3.fromRGB(255,80,80))
-    end
-end)
-
-playBtn.MouseButton1Click:Connect(function()
-    if playing or #macro == 0 then return end
-
-    playing = true
-    setStatus("Playing...", Color3.fromRGB(100,150,255))
-
-    task.spawn(function()
-        local created = {}
-        local beginTime = tick()
-        local errors = 0
-
-        for i,step in ipairs(macro) do
-            if not playing then break end
-
-            local exactTime = beginTime + (step.time / playbackSpeed)
-            repeat task.wait() until tick() >= exactTime
-
-            if step.action == "spawn" then
-                local ok,res = pcall(function()
-                    return SpawnTower:InvokeServer(
-                        step.unitUUID,
-                        CFrame.new(step.pos.x, step.pos.y, step.pos.z)
-                    )
-                end)
-
-                if ok and res then
-                    created[step.towerIndex] = res
-
-                    local t = tick()
-                    while tick() - t < 0.18 do
-                        task.wait()
-                    end
-                else
-                    errors += 1
-                end
-
-            elseif step.action == "upgrade" then
-                local tower = created[step.towerIndex]
-
-                if tower then
-                    local tries = 0
-                    while tries < 15 and (not tower or not tower.Parent) do
-                        tries += 1
-                        task.wait(0.05)
-                    end
-
-                    local ok = pcall(function()
-                        UpgradeTower:InvokeServer(tower)
-                    end)
-
-                    if not ok then
-                        errors += 1
-                        task.wait(0.25)
-
-                        pcall(function()
-                            UpgradeTower:InvokeServer(tower)
-                        end)
-                    end
-                else
-                    errors += 1
-                end
-            end
-        end
-
-        playing = false
-
-        if errors == 0 then
-            setStatus("Done", Color3.fromRGB(0,255,120))
-        else
-            setStatus("Done with "..errors.." errors", Color3.fromRGB(255,180,0))
-        end
-    end)
+plyBtn.MouseButton1Click:Connect(function()
+	if play then log("Already playing!",Color3.fromRGB(239,68,68))return end
+	if rec then log("Stop recording first!",Color3.fromRGB(239,68,68))return end
+	local steps=slots[cur].steps
+	if#steps==0 then log("Empty!",Color3.fromRGB(239,68,68))return end
+	if not ST or not UT then log("Remotes not ready!",Color3.fromRGB(239,68,68))return end
+	play=true tw(plyBtn,{BackgroundColor3=Color3.fromRGB(40,40,80)})plyStk.Color=Color3.fromRGB(99,102,241)
+	task.spawn(function()
+		local cr,err,ps={},0,os.clock()
+		for i,s in ipairs(steps)do
+			if not play then break end
+			local tgt=ps+(s.time/spd)
+			local rw=tgt-os.clock()-.05 if rw>0 then task.wait(rw)end
+			while os.clock()<tgt do RS.Heartbeat:Wait()end
+			log(string.format("[%d/%d] %s",i,#steps,s.action),Color3.fromRGB(99,102,241))
+			if s.action=="spawn"then
+				local ok,res=inv(ST,3,s.unitUUID,CFrame.new(s.pos.x,s.pos.y,s.pos.z))
+				if ok then cr[s.towerIndex]=res else err+=1 warn("Spawn fail "..i)end
+			elseif s.action=="upgrade"then
+				local tw2=cr[s.towerIndex]
+				if tw2 then local ok2=inv(UT,5,tw2)if not ok2 then err+=1 warn("Upg fail "..i)end
+				else err+=1 warn("No tower "..i)end
+			end
+		end
+		play=false tw(plyBtn,{BackgroundColor3=Color3.fromRGB(32,32,48)})plyStk.Color=Color3.fromRGB(60,60,90)
+		log(err>0 and"Done - "..err.." err(s)"or"Done!",err>0 and Color3.fromRGB(234,179,8)or Color3.fromRGB(34,197,94))
+	end)
 end)

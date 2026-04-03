@@ -5,6 +5,8 @@ local CoreGui = game:GetService("CoreGui")
 
 local SpawnTower
 local UpgradeTower
+local SkipWave
+local AutoSkip
 
 task.spawn(function()
     while not SpawnTower or not UpgradeTower do
@@ -13,6 +15,10 @@ task.spawn(function()
                 SpawnTower = v
             elseif v.Name == "UpgradeTower" then
                 UpgradeTower = v
+            elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then
+                SkipWave = v
+            elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then
+                AutoSkip = v
             end
         end
 
@@ -155,6 +161,21 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     break
                 end
             end
+        elseif SkipWave and self == SkipWave and (method == "InvokeServer" or method == "FireServer") then
+            table.insert(macro, {
+                action = "skip",
+                t = os.clock() - startTime
+            })
+
+            status.Text = "Skip"
+        elseif AutoSkip and self == AutoSkip and (method == "InvokeServer" or method == "FireServer") then
+            table.insert(macro, {
+                action = "autoskip",
+                value = args[1],
+                t = os.clock() - startTime
+            })
+
+            status.Text = "AutoSkip"
         end
     end
 
@@ -216,6 +237,27 @@ playButton.MouseButton1Click:Connect(function()
                 end
 
                 task.wait(0.1)
+            elseif step.action == "skip" then
+                pcall(function()
+                    if SkipWave then
+                        if SkipWave:IsA("RemoteFunction") then
+                            SkipWave:InvokeServer()
+                        else
+                            SkipWave:FireServer()
+                        end
+                    end
+                end)
+
+            elseif step.action == "autoskip" then
+                pcall(function()
+                    if AutoSkip then
+                        if AutoSkip:IsA("RemoteFunction") then
+                            AutoSkip:InvokeServer(step.value)
+                        else
+                            AutoSkip:FireServer(step.value)
+                        end
+                    end
+                end)
             end
         end
 

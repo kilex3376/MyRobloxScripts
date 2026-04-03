@@ -1,63 +1,63 @@
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CoreGui = game:GetService("CoreGui")
 
 local SpawnTower
 local UpgradeTower
 local SkipWave
 local AutoSkip
+local MoneyValue
 
 task.spawn(function()
     while not SpawnTower or not UpgradeTower do
         for _,v in ipairs(ReplicatedStorage:GetDescendants()) do
-            if v.Name == "SpawnNewTower" then
-                SpawnTower = v
-            elseif v.Name == "UpgradeTower" then
-                UpgradeTower = v
-            elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then
-                SkipWave = v
-            elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then
-                AutoSkip = v
+            if v.Name == "SpawnNewTower" then SpawnTower = v
+            elseif v.Name == "UpgradeTower" then UpgradeTower = v
+            elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then SkipWave = v
+            elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then AutoSkip = v
             end
         end
-
+        pcall(function()
+            MoneyValue = game:GetService("Players").LocalPlayer
+                :WaitForChild("PlayerGui")
+                :WaitForChild("HUD")
+                :WaitForChild("Main")
+                :WaitForChild("Top")
+                :WaitForChild("Cash")
+        end)
         task.wait(1)
     end
 end)
 
+-- // Слоты
+local SLOTS = 3
+local currentSlot = 1
+local allMacros = {{}, {}, {}}  -- макросы в памяти для каждого слота
+
 local recording = false
 local playing = false
-local macro = {}
+local macro = allMacros[currentSlot]
 local placed = {}
 local startTime = 0
 local lastSpawnTime = 0
 local lastSpawnPos
 
+-- // GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "MacroGUI"
 gui.ResetOnSpawn = false
-
-pcall(function()
-    if syn and syn.protect_gui then
-        syn.protect_gui(gui)
-    end
-end)
-
+pcall(function() if syn and syn.protect_gui then syn.protect_gui(gui) end end)
 gui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
 frame.Parent = gui
-frame.Size = UDim2.new(0, 190, 0, 150)
-frame.Position = UDim2.new(0, 20, 0.5, -75)
+frame.Size = UDim2.new(0, 190, 0, 190)
+frame.Position = UDim2.new(0, 20, 0.5, -95)
 frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
 frame.BorderSizePixel = 0
 frame.Active = true
 frame.Draggable = true
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0,10)
-corner.Parent = frame
+do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,10) c.Parent = frame end
 
 local title = Instance.new("TextLabel")
 title.Parent = frame
@@ -67,6 +67,47 @@ title.Text = "Macro"
 title.TextColor3 = Color3.new(1,1,1)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
+
+-- // Слот-кнопки (маленькие, сверху)
+local slotColors = {
+    Color3.fromRGB(80,80,200),
+    Color3.fromRGB(40,140,40),
+    Color3.fromRGB(160,100,20),
+}
+local slotBtns = {}
+
+local function refreshSlots()
+    for i = 1, SLOTS do
+        local isActive = (i == currentSlot)
+        slotBtns[i].BackgroundColor3 = isActive
+            and slotColors[i]
+            or Color3.fromRGB(40,40,40)
+        slotBtns[i].Text = "S"..i.." ("..#allMacros[i]..")"
+    end
+end
+
+for i = 1, SLOTS do
+    local b = Instance.new("TextButton")
+    b.Parent = frame
+    b.Size = UDim2.new(0, 54, 0, 22)
+    b.Position = UDim2.new(0, 8 + (i-1)*60, 0, 28)
+    b.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Font = Enum.Font.SourceSansBold
+    b.TextSize = 13
+    b.Text = "S"..i.." (0)"
+    b.BorderSizePixel = 0
+    do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,6) c.Parent = b end
+    slotBtns[i] = b
+    b.MouseButton1Click:Connect(function()
+        if playing or recording then return end
+        currentSlot = i
+        macro = allMacros[currentSlot]
+        placed = {}
+        refreshSlots()
+        status.Text = "Slot "..i
+    end)
+end
 
 local function makeButton(text, y)
     local b = Instance.new("TextButton")
@@ -78,33 +119,31 @@ local function makeButton(text, y)
     b.Font = Enum.Font.SourceSansBold
     b.TextSize = 18
     b.Text = text
-
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0,8)
-    c.Parent = b
-
+    b.BorderSizePixel = 0
+    do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,8) c.Parent = b end
     return b
 end
 
-local recordButton = makeButton("Record", 35)
-local stopButton = makeButton("Stop", 70)
-local playButton = makeButton("Play", 105)
+local recordButton = makeButton("Record", 58)
+local stopButton   = makeButton("Stop",   94)
+local playButton   = makeButton("Play",   130)
 
 local status = Instance.new("TextLabel")
 status.Parent = frame
 status.Size = UDim2.new(1,0,0,20)
-status.Position = UDim2.new(0,0,1,0)
+status.Position = UDim2.new(0,0,0,165)
 status.BackgroundTransparency = 1
 status.Text = "Loading"
 status.TextColor3 = Color3.new(1,1,1)
 status.Font = Enum.Font.SourceSans
 status.TextSize = 18
 
+refreshSlots()
+
 while not SpawnTower or not UpgradeTower do
     status.Text = "Waiting for match..."
     task.wait(1)
 end
-
 status.Text = "Ready"
 
 if not hookmetamethod or not getnamecallmethod or not checkcaller then
@@ -122,59 +161,39 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             local cf = args[2]
             if typeof(cf) == "CFrame" then
                 local pos = cf.Position
-
                 if tick() - lastSpawnTime > 0.35 or not lastSpawnPos or (lastSpawnPos - pos).Magnitude > 1 then
                     lastSpawnTime = tick()
                     lastSpawnPos = pos
-
                     local result = old(self, ...)
-
                     local index = #placed + 1
                     placed[index] = result
-
                     table.insert(macro, {
-                        action = "spawn",
-                        index = index,
+                        action = "spawn", index = index,
                         id = tostring(args[1]),
-                        x = pos.X,
-                        y = pos.Y,
-                        z = pos.Z,
+                        cost = tonumber(string.match(MoneyValue and MoneyValue.Text or "0", "%d+")) or 0,
+                        x = pos.X, y = pos.Y, z = pos.Z,
                         t = os.clock() - startTime
                     })
-
-                    status.Text = "Spawn " .. index
+                    status.Text = "Spawn "..index
+                    refreshSlots()
                     return result
                 end
             end
         elseif self == UpgradeTower and method == "InvokeServer" then
             local tower = args[1]
-
             for i = #placed, 1, -1 do
                 if placed[i] == tower then
-                    table.insert(macro, {
-                        action = "upgrade",
-                        index = i,
-                        t = os.clock() - startTime
-                    })
-
-                    status.Text = "Upgrade " .. i
+                    table.insert(macro, {action="upgrade", index=i, t=os.clock()-startTime})
+                    status.Text = "Upgrade "..i
+                    refreshSlots()
                     break
                 end
             end
         elseif SkipWave and self == SkipWave and (method == "InvokeServer" or method == "FireServer") then
-            table.insert(macro, {
-                action = "skip",
-                t = os.clock() - startTime
-            })
-
+            table.insert(macro, {action="skip", t=os.clock()-startTime})
             status.Text = "Skip"
         elseif AutoSkip and self == AutoSkip and (method == "InvokeServer" or method == "FireServer") then
-            table.insert(macro, {
-                action = "autoskip",
-                value = args[1],
-                t = os.clock() - startTime
-            })
-
+            table.insert(macro, {action="autoskip", value=args[1], t=os.clock()-startTime})
             status.Text = "AutoSkip"
         end
     end
@@ -183,32 +202,48 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
 end)
 
 recordButton.MouseButton1Click:Connect(function()
-    macro = {}
+    if playing then return end
+    allMacros[currentSlot] = {}
+    macro = allMacros[currentSlot]
     placed = {}
     lastSpawnTime = 0
     lastSpawnPos = nil
     startTime = os.clock()
     recording = true
-    status.Text = "Recording"
+    refreshSlots()
+    status.Text = "Recording S"..currentSlot
 end)
 
 stopButton.MouseButton1Click:Connect(function()
+    if not recording then return end
     recording = false
     if writefile then
-        writefile("macro.json", HttpService:JSONEncode(macro))
+        writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(macro))
     end
-    status.Text = "Saved " .. #macro
+    refreshSlots()
+    status.Text = "Saved "..#macro.." (S"..currentSlot..")"
 end)
 
 playButton.MouseButton1Click:Connect(function()
     if playing then return end
 
-    if readfile and isfile and isfile("macro.json") then
-        macro = HttpService:JSONDecode(readfile("macro.json"))
+    -- Загружаем с диска если в памяти пусто
+    if #allMacros[currentSlot] == 0 then
+        if readfile and isfile and isfile("macro_s"..currentSlot..".json") then
+            local ok, data = pcall(function()
+                return HttpService:JSONDecode(readfile("macro_s"..currentSlot..".json"))
+            end)
+            if ok and data then
+                allMacros[currentSlot] = data
+                macro = allMacros[currentSlot]
+            end
+        end
     end
 
+    if #macro == 0 then status.Text = "Empty S"..currentSlot return end
+
     playing = true
-    status.Text = "Playing"
+    status.Text = "Playing S"..currentSlot
 
     task.spawn(function()
         local built = {}
@@ -220,48 +255,49 @@ playButton.MouseButton1Click:Connect(function()
             end
 
             if step.action == "spawn" then
+                if step.cost and MoneyValue then
+                    repeat
+                        local cur = tonumber(string.match(MoneyValue.Text, "%d+")) or 0
+                        if cur >= step.cost then break end
+                        RunService.Heartbeat:Wait()
+                    until false
+                end
                 local ok, tower = pcall(function()
                     return SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z))
                 end)
-
-                if ok then
-                    built[step.index] = tower
-                end
-
+                if ok then built[step.index] = tower end
                 task.wait(0.05)
+
             elseif step.action == "upgrade" then
                 if built[step.index] then
-                    pcall(function()
-                        UpgradeTower:InvokeServer(built[step.index])
-                    end)
+                    -- Одна попытка, если ошибка — ждём и повторяем 1 раз
+                    local ok = pcall(function() UpgradeTower:InvokeServer(built[step.index]) end)
+                    if not ok then
+                        task.wait(0.4)
+                        pcall(function() UpgradeTower:InvokeServer(built[step.index]) end)
+                    end
                 end
-
                 task.wait(0.1)
+
             elseif step.action == "skip" then
                 pcall(function()
                     if SkipWave then
-                        if SkipWave:IsA("RemoteFunction") then
-                            SkipWave:InvokeServer()
-                        else
-                            SkipWave:FireServer()
-                        end
+                        if SkipWave:IsA("RemoteFunction") then SkipWave:InvokeServer()
+                        else SkipWave:FireServer() end
                     end
                 end)
 
             elseif step.action == "autoskip" then
                 pcall(function()
                     if AutoSkip then
-                        if AutoSkip:IsA("RemoteFunction") then
-                            AutoSkip:InvokeServer(step.value)
-                        else
-                            AutoSkip:FireServer(step.value)
-                        end
+                        if AutoSkip:IsA("RemoteFunction") then AutoSkip:InvokeServer(step.value)
+                        else AutoSkip:FireServer(step.value) end
                     end
                 end)
             end
         end
 
         playing = false
-        status.Text = "Done"
+        status.Text = "Done (S"..currentSlot..")"
     end)
 end)

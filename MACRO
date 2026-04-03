@@ -1,0 +1,537 @@
+-- // Macro System v5.0
+local HttpService       = game:GetService("HttpService")
+local TweenService      = game:GetService("TweenService")
+local UserInputService  = game:GetService("UserInputService")
+local RunService        = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local SpawnTower    = nil
+local UpgradeTower  = nil
+
+task.defer(function()
+    local ok, funcs = pcall(function() return ReplicatedStorage:WaitForChild("Functions") end)
+    if not ok or not funcs then return end
+    SpawnTower   = funcs:FindFirstChild("SpawnNewTower") or funcs:WaitForChild("SpawnNewTower")
+    UpgradeTower = funcs:FindFirstChild("UpgradeTower")  or funcs:WaitForChild("UpgradeTower")
+    if statusLabel then
+        statusLabel.Text       = "Ready"
+        statusLabel.TextColor3 = Color3.fromRGB(34, 197, 94)
+    end
+end)
+
+local SLOT_COUNT  = 3
+local slots       = {}
+local currentSlot = 1
+
+for i = 1, SLOT_COUNT do
+    slots[i] = { name = "Macro " .. i, steps = {} }
+    if isfile and isfile("macro_slot"..i..".json") then
+        local ok, data = pcall(function()
+            return HttpService:JSONDecode(readfile("macro_slot"..i..".json"))
+        end)
+        if ok and data then
+            slots[i].name  = data.name  or ("Macro " .. i)
+            slots[i].steps = data.steps or {}
+        end
+    end
+end
+
+local recording     = false
+local playing       = false
+local startTime     = 0
+local placed        = {}
+local playbackSpeed = 1.0
+local statusLabel   = nil
+
+local function log(msg, color)
+    if statusLabel then
+        statusLabel.Text       = msg
+        statusLabel.TextColor3 = color or Color3.fromRGB(200, 200, 255)
+    end
+    print("[Macro] " .. msg)
+end
+
+local function tw(obj, props, dur)
+    TweenService:Create(obj, TweenInfo.new(dur or 0.15, Enum.EasingStyle.Quad), props):Play()
+end
+
+local function saveSlot(i)
+    if not writefile then return end
+    pcall(function()
+        writefile("macro_slot"..i..".json", HttpService:JSONEncode({
+            name  = slots[i].name,
+            steps = slots[i].steps
+        }))
+    end)
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name           = "MacroSystem"
+gui.ResetOnSpawn   = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.IgnoreGuiInset = true
+if syn and syn.protect_gui then syn.protect_gui(gui) end
+gui.Parent = game.CoreGui
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Parent           = gui
+toggleBtn.Size             = UDim2.new(0, 36, 0, 36)
+toggleBtn.Position         = UDim2.new(0, 16, 0.5, -18)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(99, 102, 241)
+toggleBtn.BorderSizePixel  = 0
+toggleBtn.Text             = "M"
+toggleBtn.TextColor3       = Color3.new(1,1,1)
+toggleBtn.TextSize         = 15
+toggleBtn.Font             = Enum.Font.GothamBold
+toggleBtn.ZIndex           = 10
+toggleBtn.AutoButtonColor  = false
+do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,8) c.Parent = toggleBtn end
+
+local frame = Instance.new("Frame")
+frame.Name             = "Main"
+frame.Parent           = gui
+frame.Size             = UDim2.new(0, 210, 0, 420)
+frame.Position         = UDim2.new(0, 60, 0.5, -210)
+frame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+frame.BorderSizePixel  = 0
+frame.Active           = true
+frame.Draggable        = true
+frame.ClipsDescendants = true
+frame.Visible          = true
+do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,10) c.Parent = frame end
+
+local accent = Instance.new("Frame")
+accent.Parent           = frame
+accent.Size             = UDim2.new(1,0,0,3)
+accent.BackgroundColor3 = Color3.fromRGB(99,102,241)
+accent.BorderSizePixel  = 0
+do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,10) c.Parent = accent end
+
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Parent              = frame
+titleLbl.Size                = UDim2.new(1,0,0,36)
+titleLbl.Position            = UDim2.new(0,0,0,6)
+titleLbl.BackgroundTransparency = 1
+titleLbl.Text                = "MACRO SYSTEM"
+titleLbl.TextColor3          = Color3.fromRGB(220,220,255)
+titleLbl.TextSize            = 13
+titleLbl.Font                = Enum.Font.GothamBold
+titleLbl.TextXAlignment      = Enum.TextXAlignment.Center
+
+local div1 = Instance.new("Frame")
+div1.Parent           = frame
+div1.Size             = UDim2.new(0.9,0,0,1)
+div1.Position         = UDim2.new(0.05,0,0,44)
+div1.BackgroundColor3 = Color3.fromRGB(50,50,70)
+div1.BorderSizePixel  = 0
+
+statusLabel = Instance.new("TextLabel")
+statusLabel.Parent              = frame
+statusLabel.Size                = UDim2.new(1,-20,0,20)
+statusLabel.Position            = UDim2.new(0,10,0,48)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text                = "Loading remotes..."
+statusLabel.TextColor3          = Color3.fromRGB(130,130,200)
+statusLabel.TextSize            = 11
+statusLabel.Font                = Enum.Font.Gotham
+statusLabel.TextXAlignment      = Enum.TextXAlignment.Left
+
+local slotHeader = Instance.new("TextLabel")
+slotHeader.Parent              = frame
+slotHeader.Size                = UDim2.new(1,-20,0,16)
+slotHeader.Position            = UDim2.new(0,10,0,72)
+slotHeader.BackgroundTransparency = 1
+slotHeader.Text                = "SLOTS"
+slotHeader.TextColor3          = Color3.fromRGB(80,80,130)
+slotHeader.TextSize            = 10
+slotHeader.Font                = Enum.Font.GothamBold
+slotHeader.TextXAlignment      = Enum.TextXAlignment.Left
+
+local slotBtns   = {}
+local slotLabels = {}
+
+local function getSlotColor(i)
+    local colors = {
+        Color3.fromRGB(99,102,241),
+        Color3.fromRGB(34,197,94),
+        Color3.fromRGB(234,179,8),
+    }
+    return colors[i] or Color3.fromRGB(99,102,241)
+end
+
+local function refreshSlotBtns()
+    for i = 1, SLOT_COUNT do
+        local btn = slotBtns[i]
+        local isActive = (i == currentSlot)
+        tw(btn, {BackgroundColor3 = isActive and Color3.fromRGB(40,40,70) or Color3.fromRGB(26,26,38)})
+        btn.UIStroke.Thickness   = isActive and 1.5 or 1
+        btn.UIStroke.Color       = isActive and getSlotColor(i) or Color3.fromRGB(45,45,65)
+        slotLabels[i].Text       = slots[i].name .. "  (" .. #slots[i].steps .. ")"
+        slotLabels[i].TextColor3 = isActive and Color3.fromRGB(220,220,255) or Color3.fromRGB(120,120,160)
+    end
+end
+
+for i = 1, SLOT_COUNT do
+    local btn = Instance.new("TextButton")
+    btn.Parent           = frame
+    btn.Size             = UDim2.new(0, 56, 0, 34)
+    btn.Position         = UDim2.new(0, 10 + (i-1)*66, 0, 90)
+    btn.BackgroundColor3 = Color3.fromRGB(26,26,38)
+    btn.BorderSizePixel  = 0
+    btn.Text             = ""
+    btn.AutoButtonColor  = false
+    do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,7) c.Parent = btn end
+    local stroke = Instance.new("UIStroke")
+    stroke.Name      = "UIStroke"
+    stroke.Color     = Color3.fromRGB(45,45,65)
+    stroke.Thickness = 1
+    stroke.Parent    = btn
+    local lbl = Instance.new("TextLabel")
+    lbl.Parent              = btn
+    lbl.Size                = UDim2.new(1,-6,1,0)
+    lbl.Position            = UDim2.new(0,3,0,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text                = slots[i].name
+    lbl.TextColor3          = Color3.fromRGB(120,120,160)
+    lbl.TextSize            = 10
+    lbl.Font                = Enum.Font.GothamBold
+    lbl.TextWrapped         = true
+    lbl.TextXAlignment      = Enum.TextXAlignment.Center
+    slotBtns[i]   = btn
+    slotLabels[i] = lbl
+    btn.MouseButton1Click:Connect(function()
+        currentSlot = i
+        refreshSlotBtns()
+        log("Slot "..i..": "..slots[i].name, getSlotColor(i))
+    end)
+end
+
+local renameBox = Instance.new("TextBox")
+renameBox.Parent            = frame
+renameBox.Size              = UDim2.new(0, 170, 0, 26)
+renameBox.Position          = UDim2.new(0, 20, 0, 130)
+renameBox.BackgroundColor3  = Color3.fromRGB(28,28,42)
+renameBox.BorderSizePixel   = 0
+renameBox.TextColor3        = Color3.fromRGB(200,200,255)
+renameBox.PlaceholderText   = "Rename current slot..."
+renameBox.PlaceholderColor3 = Color3.fromRGB(70,70,100)
+renameBox.Text              = ""
+renameBox.TextSize          = 11
+renameBox.Font              = Enum.Font.Gotham
+renameBox.ClearTextOnFocus  = false
+do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,6) c.Parent = renameBox end
+do
+    local s = Instance.new("UIStroke")
+    s.Color = Color3.fromRGB(60,60,90)
+    s.Thickness = 1
+    s.Parent = renameBox
+end
+renameBox.FocusLost:Connect(function()
+    local name = renameBox.Text:match("^%s*(.-)%s*$")
+    if name and #name > 0 then
+        slots[currentSlot].name = name
+        saveSlot(currentSlot)
+        refreshSlotBtns()
+        log("Renamed: " .. name, Color3.fromRGB(200,200,255))
+    end
+    renameBox.Text = ""
+end)
+
+local div2 = Instance.new("Frame")
+div2.Parent           = frame
+div2.Size             = UDim2.new(0.9,0,0,1)
+div2.Position         = UDim2.new(0.05,0,0,164)
+div2.BackgroundColor3 = Color3.fromRGB(50,50,70)
+div2.BorderSizePixel  = 0
+
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Parent              = frame
+speedLabel.Size                = UDim2.new(1,-20,0,18)
+speedLabel.Position            = UDim2.new(0,10,0,168)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text                = "Speed: 1.0x"
+speedLabel.TextColor3          = Color3.fromRGB(99,102,241)
+speedLabel.TextSize            = 11
+speedLabel.Font                = Enum.Font.GothamBold
+speedLabel.TextXAlignment      = Enum.TextXAlignment.Left
+
+local sliderBg = Instance.new("Frame")
+sliderBg.Parent           = frame
+sliderBg.Size             = UDim2.new(0,170,0,8)
+sliderBg.Position         = UDim2.new(0,20,0,190)
+sliderBg.BackgroundColor3 = Color3.fromRGB(40,40,60)
+sliderBg.BorderSizePixel  = 0
+do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(1,0) c.Parent = sliderBg end
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Parent           = sliderBg
+sliderFill.Size             = UDim2.new(0.5,0,1,0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(99,102,241)
+sliderFill.BorderSizePixel  = 0
+do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(1,0) c.Parent = sliderFill end
+
+local sliderKnob = Instance.new("Frame")
+sliderKnob.Parent           = sliderBg
+sliderKnob.Size             = UDim2.new(0,16,0,16)
+sliderKnob.Position         = UDim2.new(0.5,-8,0.5,-8)
+sliderKnob.BackgroundColor3 = Color3.fromRGB(200,200,255)
+sliderKnob.BorderSizePixel  = 0
+do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(1,0) c.Parent = sliderKnob end
+
+local dragging = false
+sliderKnob.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+        local relX = math.clamp(
+            (i.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+        playbackSpeed       = math.floor((0.25 + relX*2.75)*4+0.5)/4
+        sliderFill.Size     = UDim2.new(relX,0,1,0)
+        sliderKnob.Position = UDim2.new(relX,-8,0.5,-8)
+        speedLabel.Text     = string.format("Speed: %.2fx", playbackSpeed)
+    end
+end)
+
+local function makeBtn(text, y, strokeCol)
+    local btn = Instance.new("TextButton")
+    btn.Parent           = frame
+    btn.Size             = UDim2.new(0,170,0,32)
+    btn.Position         = UDim2.new(0,20,0,y)
+    btn.BackgroundColor3 = Color3.fromRGB(32,32,48)
+    btn.BorderSizePixel  = 0
+    btn.TextColor3       = Color3.fromRGB(220,220,255)
+    btn.Text             = text
+    btn.TextSize         = 12
+    btn.Font             = Enum.Font.GothamSemibold
+    btn.AutoButtonColor  = false
+    do local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,7) c.Parent = btn end
+    local stroke = Instance.new("UIStroke")
+    stroke.Color     = strokeCol or Color3.fromRGB(60,60,90)
+    stroke.Thickness = 1
+    stroke.Parent    = btn
+    btn.MouseEnter:Connect(function()       tw(btn,{BackgroundColor3=Color3.fromRGB(50,50,80)}) end)
+    btn.MouseLeave:Connect(function()       tw(btn,{BackgroundColor3=Color3.fromRGB(32,32,48)}) end)
+    btn.MouseButton1Down:Connect(function() tw(btn,{BackgroundColor3=Color3.fromRGB(70,70,110)}) end)
+    btn.MouseButton1Up:Connect(function()   tw(btn,{BackgroundColor3=Color3.fromRGB(50,50,80)}) end)
+    return btn, stroke
+end
+
+local recordBtn, recordStroke = makeBtn("Start Record", 210, Color3.fromRGB(239,68,68))
+local stopBtn                 = makeBtn("Stop Record",  248, Color3.fromRGB(234,179,8))
+local saveBtn                 = makeBtn("Save Macro",   286, Color3.fromRGB(34,197,94))
+local loadBtn                 = makeBtn("Load Macro",   324, Color3.fromRGB(59,130,246))
+local playBtn, playStroke     = makeBtn("Play Macro",   362, Color3.fromRGB(99,102,241))
+
+local counterLbl = Instance.new("TextLabel")
+counterLbl.Parent              = frame
+counterLbl.Size                = UDim2.new(1,-20,0,18)
+counterLbl.Position            = UDim2.new(0,10,0,400)
+counterLbl.BackgroundTransparency = 1
+counterLbl.Text                = "Steps: 0"
+counterLbl.TextColor3          = Color3.fromRGB(80,80,120)
+counterLbl.TextSize            = 10
+counterLbl.Font                = Enum.Font.Gotham
+counterLbl.TextXAlignment      = Enum.TextXAlignment.Center
+
+local function updateCounter()
+    counterLbl.Text = "Steps: " .. #slots[currentSlot].steps
+end
+
+refreshSlotBtns()
+
+toggleBtn.MouseEnter:Connect(function()
+    tw(toggleBtn,{BackgroundColor3=Color3.fromRGB(120,124,255)})
+end)
+toggleBtn.MouseLeave:Connect(function()
+    tw(toggleBtn,{BackgroundColor3=frame.Visible
+        and Color3.fromRGB(99,102,241)
+        or  Color3.fromRGB(60,60,90)})
+end)
+toggleBtn.MouseButton1Click:Connect(function()
+    frame.Visible  = not frame.Visible
+    toggleBtn.Text = frame.Visible and "M" or ">"
+    tw(toggleBtn,{BackgroundColor3=frame.Visible
+        and Color3.fromRGB(99,102,241)
+        or  Color3.fromRGB(60,60,90)})
+end)
+
+local pulseConn = nil
+local function startPulse()
+    local t = 0
+    pulseConn = RunService.Heartbeat:Connect(function(dt)
+        t += dt
+        local a = (math.sin(t*4)+1)/2
+        recordStroke.Color = Color3.fromRGB(239,math.floor(68*a),math.floor(68*a))
+    end)
+end
+local function stopPulse()
+    if pulseConn then pulseConn:Disconnect() pulseConn=nil end
+    recordStroke.Color = Color3.fromRGB(239,68,68)
+end
+
+local function safeInvoke(remote, maxRetries, ...)
+    local args = {...}
+    for attempt = 1, maxRetries do
+        local ok, result = pcall(function()
+            return remote:InvokeServer(table.unpack(args))
+        end)
+        if ok then return true, result end
+        task.wait(0.15 * attempt)
+    end
+    return false, nil
+end
+
+local old
+old = hookmetamethod(game, "__namecall", function(self, ...)
+    local args   = {...}
+    local method = getnamecallmethod()
+    if not checkcaller() and recording then
+        local name = tostring(self)
+        if name == "SpawnNewTower" and method == "InvokeServer" then
+            local ok, result = pcall(old, self, ...)
+            if not ok then return end
+            local cf = args[2]
+            if typeof(cf) ~= "CFrame" then return result end
+            local idx = #placed + 1
+            placed[idx] = result
+            table.insert(slots[currentSlot].steps, {
+                action    = "spawn",
+                towerIndex = idx,
+                unitUUID  = tostring(args[1]),
+                time      = tick() - startTime,
+                pos       = { x=cf.X, y=cf.Y, z=cf.Z }
+            })
+            updateCounter()
+            log("Spawn #"..idx, Color3.fromRGB(34,197,94))
+            return result
+        end
+        if name == "UpgradeTower" and method == "InvokeServer" then
+            local tower = args[1]
+            for i,v in pairs(placed) do
+                if v == tower then
+                    table.insert(slots[currentSlot].steps, {
+                        action     = "upgrade",
+                        towerIndex = i,
+                        time       = tick() - startTime
+                    })
+                    updateCounter()
+                    log("Upgrade #"..i, Color3.fromRGB(234,179,8))
+                    break
+                end
+            end
+        end
+    end
+    return old(self, ...)
+end)
+
+recordBtn.MouseButton1Click:Connect(function()
+    if playing then log("Stop playback first!", Color3.fromRGB(239,68,68)) return end
+    recording = true
+    slots[currentSlot].steps = {}
+    placed    = {}
+    startTime = tick()
+    startPulse()
+    updateCounter()
+    log("Recording slot "..currentSlot.."...", Color3.fromRGB(239,68,68))
+    tw(recordBtn,{BackgroundColor3=Color3.fromRGB(80,30,30)})
+end)
+
+stopBtn.MouseButton1Click:Connect(function()
+    if not recording then return end
+    recording = false
+    stopPulse()
+    log("Stopped - "..#slots[currentSlot].steps.." steps", Color3.fromRGB(234,179,8))
+    tw(recordBtn,{BackgroundColor3=Color3.fromRGB(32,32,48)})
+end)
+
+saveBtn.MouseButton1Click:Connect(function()
+    local steps = slots[currentSlot].steps
+    if #steps == 0 then log("Nothing to save!", Color3.fromRGB(239,68,68)) return end
+    saveSlot(currentSlot)
+    log("Saved slot "..currentSlot.." ok", Color3.fromRGB(34,197,94))
+end)
+
+loadBtn.MouseButton1Click:Connect(function()
+    local file = "macro_slot"..currentSlot..".json"
+    if not isfile(file) then
+        log("No save for slot "..currentSlot, Color3.fromRGB(239,68,68)) return
+    end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(file)) end)
+    if ok and data then
+        slots[currentSlot].name  = data.name  or ("Macro "..currentSlot)
+        slots[currentSlot].steps = data.steps or {}
+        refreshSlotBtns()
+        updateCounter()
+        log("Loaded "..#slots[currentSlot].steps.." steps", Color3.fromRGB(59,130,246))
+    else
+        log("Load failed!", Color3.fromRGB(239,68,68))
+    end
+end)
+
+playBtn.MouseButton1Click:Connect(function()
+    if playing   then log("Already playing!",      Color3.fromRGB(239,68,68)) return end
+    if recording then log("Stop recording first!", Color3.fromRGB(239,68,68)) return end
+    local steps = slots[currentSlot].steps
+    if #steps == 0 then
+        log("Slot "..currentSlot.." is empty!", Color3.fromRGB(239,68,68)) return
+    end
+    if not SpawnTower or not UpgradeTower then
+        log("Remotes not ready!", Color3.fromRGB(239,68,68)) return
+    end
+    playing = true
+    tw(playBtn,{BackgroundColor3=Color3.fromRGB(40,40,80)})
+    playStroke.Color = Color3.fromRGB(99,102,241)
+    task.spawn(function()
+        local created   = {}
+        local errors    = 0
+        local playStart = os.clock()
+        for i, step in ipairs(steps) do
+            if not playing then break end
+            local target = playStart + (step.time / playbackSpeed)
+            local rough  = target - os.clock() - 0.05
+            if rough > 0 then task.wait(rough) end
+            while os.clock() < target do RunService.Heartbeat:Wait() end
+            log(string.format("[%d/%d] %s", i, #steps, step.action), Color3.fromRGB(99,102,241))
+            if step.action == "spawn" then
+                local ok, result = safeInvoke(SpawnTower, 3,
+                    step.unitUUID,
+                    CFrame.new(step.pos.x, step.pos.y, step.pos.z))
+                if ok then
+                    created[step.towerIndex] = result
+                else
+                    errors += 1
+                    warn("[Macro] Spawn failed step "..i)
+                end
+            elseif step.action == "upgrade" then
+                local tower = created[step.towerIndex]
+                if tower then
+                    local ok2 = safeInvoke(UpgradeTower, 5, tower)
+                    if not ok2 then
+                        errors += 1
+                        warn("[Macro] Upgrade failed step "..i)
+                    end  elseif step.action == "upgrade" then
+                local tower = created[step.towerIndex]
+                if tower then
+                    local ok2 = safeInvoke(UpgradeTower, 5, tower)
+                    if not ok2 then
+                        errors += 1
+                        warn("[Macro] Upgrade failed step "..i)
+                    end             else
+                    errors += 1
+                    warn("[Macro] Tower missing at step "..i)
+                end
+            end
+        end
+        playing = false
+        tw(playBtn,{BackgroundColor3=Color3.fromRGB(32,32,48)})
+        playStroke.Color = Color3.fromRGB(60,60,90)
+        log(errors > 0
+            and string.format("Done - %d error(s)", errors)
+            or  "Playback complete!",
+            errors > 0 and Color3.fromRGB(234,179,8) or Color3.fromRGB(34,197,94))
+    end)
+end)

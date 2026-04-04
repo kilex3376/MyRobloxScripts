@@ -313,12 +313,11 @@ local playButton = makeButton("Play", 130)
 local arBtn = makeButton("Auto-Replay: OFF", 166)
 local apBtn = makeButton("Auto-Play: OFF", 202)
 frame.Size = UDim2.new(0, 190, 0, 270)
-status.Position = UDim2.new(0,0,0,245)
 
 status = Instance.new("TextLabel")
 status.Parent = frame
 status.Size = UDim2.new(1, 0, 0, 20)
-status.Position = UDim2.new(0, 0, 0, 210)
+status.Position = UDim2.new(0, 0, 0, 245)
 status.BackgroundTransparency = 1
 status.Text = "Loading"
 status.TextColor3 = Color3.new(1, 1, 1)
@@ -448,8 +447,6 @@ local function startPlay()
                         built[step.index] = nil
                     end)
                 end
-            end
-        end
             end
         end
 

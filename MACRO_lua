@@ -256,12 +256,20 @@ local function refreshSlots()
 
 local miniFrame = Instance.new("Frame")
 miniFrame.Parent = gui
-miniFrame.Size = UDim2.new(0, 110, 0, 125)
-miniFrame.Position = UDim2.new(0, 220, 0.5, -62)
+miniFrame.Size = UDim2.new(0, 135, 0, 125)
+miniFrame.Position = UDim2.new(0, 230, 0.5, -62)
 miniFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
 miniFrame.BorderSizePixel = 0
 miniFrame.Active = true
 miniFrame.Draggable = true
+
+for _,v in pairs(gui:GetChildren()) do
+    if v.Name == "MiniControls" then
+        v:Destroy()
+    end
+end
+
+miniFrame.Name = "MiniControls"
 
 local miniCorner = Instance.new("UICorner")
 miniCorner.CornerRadius = UDim.new(0,10)

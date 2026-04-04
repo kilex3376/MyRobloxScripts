@@ -411,8 +411,21 @@ local function startPlay()
             local replay = endScreen and endScreen:FindFirstChild("Replay")
 
             if endScreen and endScreen.Visible and replay and replay.Visible then
-                status.Text = "Victory screen loaded"
-                task.wait(8)
+                status.Text = "Victory screen loaded, waiting reward..."
+                local oldCash = tostring(MoneyValue and MoneyValue.Text or "")
+                local rewardStart = tick()
+
+                while tick() - rewardStart < 20 do
+                    local currentCash = tostring(MoneyValue and MoneyValue.Text or "")
+
+                    if currentCash ~= oldCash then
+                        status.Text = "Reward received"
+                        task.wait(3)
+                        break
+                    end
+
+                    task.wait(1)
+                end
                 break
             end
 
@@ -442,6 +455,28 @@ local function startPlay()
 
                 status.Text = "Victory detected"
                 task.wait(5)
+
+                print("=== REPLAY DEBUG START ===")
+                local guiDebug = Players.LocalPlayer.PlayerGui
+                local gameGuiDebug = guiDebug:FindFirstChild("GameGui")
+                local endScreenDebug = gameGuiDebug and gameGuiDebug:FindFirstChild("EndScreen")
+
+                if endScreenDebug then
+                    print("EndScreen.Visible:", endScreenDebug.Visible)
+
+                    for _,v in pairs(endScreenDebug:GetDescendants()) do
+                        if v:IsA("TextButton") or v:IsA("ImageButton") then
+                            print("BUTTON:", v:GetFullName(), "Visible:", v.Visible)
+                        elseif v:IsA("TextLabel") then
+                            print("LABEL:", v:GetFullName(), "TEXT:", v.Text, "Visible:", v.Visible)
+                        end
+                    end
+                else
+                    warn("EndScreen not found")
+                end
+
+                print("=== REPLAY DEBUG END ===")
+                task.wait(10)
 
                 local clicked = waitAndClickPlayAgain(15)
 

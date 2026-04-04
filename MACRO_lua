@@ -405,15 +405,34 @@ local function startPlay()
 
         if autoReplay then
             setReplayFlag(currentSlot)
-            status.Text = "Waiting Play Again..."
+            status.Text = "Waiting for Victory..."
 
-            local clicked = waitAndClickPlayAgain(60)
+            task.spawn(function()
+                local gui = Players.LocalPlayer:WaitForChild("PlayerGui")
 
-            if clicked then
-                status.Text = "Rejoining..."
-            else
-                status.Text = "Open console and send [Macro] lines"
-            end
+                while true do
+                    local gameGui = gui:FindFirstChild("GameGui")
+                    local endScreen = gameGui and gameGui:FindFirstChild("EndScreen")
+                    local replay = endScreen and endScreen:FindFirstChild("Replay")
+
+                    if replay and replay.Visible then
+                        break
+                    end
+
+                    task.wait(1)
+                end
+
+                status.Text = "Victory detected"
+                task.wait(5)
+
+                local clicked = waitAndClickPlayAgain(15)
+
+                if clicked then
+                    status.Text = "Rejoining..."
+                else
+                    status.Text = "Open console and send [Macro] lines"
+                end
+            end)
         else
             clearReplayFlag()
             status.Text = "Done"
@@ -460,8 +479,8 @@ task.spawn(function()
     refreshSlots()
     clearReplayFlag()
 
-    status.Text = "Restarting in 5s..."
-    task.wait(5)
+    status.Text = "Restarting in 2s..."
+    task.wait(2)
 
     setReplayFlag(currentSlot)
     startPlay()

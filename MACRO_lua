@@ -253,6 +253,69 @@ local slotBtns = {}
 local status
 
 local function refreshSlots()
+
+local miniFrame = Instance.new("Frame")
+miniFrame.Parent = gui
+miniFrame.Size = UDim2.new(0, 110, 0, 90)
+miniFrame.Position = UDim2.new(0, 220, 0.5, -45)
+miniFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+miniFrame.BorderSizePixel = 0
+
+local miniCorner = Instance.new("UICorner")
+miniCorner.CornerRadius = UDim.new(0,10)
+miniCorner.Parent = miniFrame
+
+local deleteBtn = Instance.new("TextButton")
+deleteBtn.Parent = miniFrame
+deleteBtn.Size = UDim2.new(1,-10,0,30)
+deleteBtn.Position = UDim2.new(0,5,0,5)
+deleteBtn.Text = "Delete Slot"
+deleteBtn.BackgroundColor3 = Color3.fromRGB(120,40,40)
+deleteBtn.TextColor3 = Color3.new(1,1,1)
+deleteBtn.BorderSizePixel = 0
+Instance.new("UICorner", deleteBtn).CornerRadius = UDim.new(0,8)
+
+local clearReplayBtn = Instance.new("TextButton")
+clearReplayBtn.Parent = miniFrame
+clearReplayBtn.Size = UDim2.new(1,-10,0,30)
+clearReplayBtn.Position = UDim2.new(0,5,0,45)
+clearReplayBtn.Text = "Stop Auto"
+clearReplayBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+clearReplayBtn.TextColor3 = Color3.new(1,1,1)
+clearReplayBtn.BorderSizePixel = 0
+Instance.new("UICorner", clearReplayBtn).CornerRadius = UDim.new(0,8)
+
+deleteBtn.MouseButton1Click:Connect(function()
+    allMacros[currentSlot] = {}
+    macro = allMacros[currentSlot]
+
+    if writefile then
+        pcall(function()
+            delfile("macro_s" .. currentSlot .. ".json")
+        end)
+    end
+
+    refreshSlots()
+    status.Text = "Deleted S" .. currentSlot
+end)
+
+clearReplayBtn.MouseButton1Click:Connect(function()
+    autoReplay = false
+    autoPlay = false
+    clearReplayFlag()
+
+    arBtn.Text = "Auto-Replay: OFF"
+    arBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+
+    apBtn.Text = "Auto-Play: OFF"
+    apBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+
+    if writefile then
+        writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = false}))
+    end
+
+    status.Text = "Auto disabled"
+end)
     for i = 1, SLOTS do
         local active = i == currentSlot
         slotBtns[i].BackgroundColor3 = active and slotColors[i] or Color3.fromRGB(40, 40, 40)
@@ -278,10 +341,21 @@ for i = 1, SLOTS do
     slotBtns[i] = b
 
     b.MouseButton1Click:Connect(function()
-        if playing or recording then return end
+        if recording then return end
 
         currentSlot = i
         macro = allMacros[currentSlot]
+
+        if readfile and isfile and isfile("macro_s" .. currentSlot .. ".json") then
+            local ok, data = pcall(function()
+                return HttpService:JSONDecode(readfile("macro_s" .. currentSlot .. ".json"))
+            end)
+
+            if ok and data then
+                allMacros[currentSlot] = data
+                macro = allMacros[currentSlot]
+            end
+        end
         placed = {}
         refreshSlots()
         status.Text = "Slot " .. i
@@ -550,7 +624,10 @@ recordButton.MouseButton1Click:Connect(function()
     macro = allMacros[currentSlot]
     placed = {}
     startTime = os.clock()
-    recording = true
+    macro = {}
+allMacros[currentSlot] = macro
+
+recording = true
 
     task.spawn(function()
         local oldCount = #placed

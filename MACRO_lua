@@ -256,10 +256,12 @@ local function refreshSlots()
 
 local miniFrame = Instance.new("Frame")
 miniFrame.Parent = gui
-miniFrame.Size = UDim2.new(0, 110, 0, 90)
-miniFrame.Position = UDim2.new(0, 220, 0.5, -45)
+miniFrame.Size = UDim2.new(0, 110, 0, 125)
+miniFrame.Position = UDim2.new(0, 220, 0.5, -62)
 miniFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
 miniFrame.BorderSizePixel = 0
+miniFrame.Active = true
+miniFrame.Draggable = true
 
 local miniCorner = Instance.new("UICorner")
 miniCorner.CornerRadius = UDim.new(0,10)
@@ -275,37 +277,36 @@ deleteBtn.TextColor3 = Color3.new(1,1,1)
 deleteBtn.BorderSizePixel = 0
 Instance.new("UICorner", deleteBtn).CornerRadius = UDim.new(0,8)
 
-local clearReplayBtn = Instance.new("TextButton")
-clearReplayBtn.Parent = miniFrame
-clearReplayBtn.Size = UDim2.new(1,-10,0,30)
-clearReplayBtn.Position = UDim2.new(0,5,0,45)
-clearReplayBtn.Text = "Stop Auto"
-clearReplayBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
-clearReplayBtn.TextColor3 = Color3.new(1,1,1)
-clearReplayBtn.BorderSizePixel = 0
-Instance.new("UICorner", clearReplayBtn).CornerRadius = UDim.new(0,8)
+local stopReplayBtn = Instance.new("TextButton")
+stopReplayBtn.Parent = miniFrame
+stopReplayBtn.Size = UDim2.new(1,-10,0,30)
+stopReplayBtn.Position = UDim2.new(0,5,0,45)
+stopReplayBtn.Text = "Stop Replay"
+stopReplayBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+stopReplayBtn.TextColor3 = Color3.new(1,1,1)
+stopReplayBtn.BorderSizePixel = 0
+Instance.new("UICorner", stopReplayBtn).CornerRadius = UDim.new(0,8)
 
-deleteBtn.MouseButton1Click:Connect(function()
-    allMacros[currentSlot] = {}
-    macro = allMacros[currentSlot]
+local stopPlayBtn = Instance.new("TextButton")
+stopPlayBtn.Parent = miniFrame
+stopPlayBtn.Size = UDim2.new(1,-10,0,30)
+stopPlayBtn.Position = UDim2.new(0,5,0,85)
+stopPlayBtn.Text = "Stop Play"
+stopPlayBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+stopPlayBtn.TextColor3 = Color3.new(1,1,1)
+stopPlayBtn.BorderSizePixel = 0
+Instance.new("UICorner", stopPlayBtn).CornerRadius = UDim.new(0,8)
 
-    if writefile then
-        pcall(function()
-            delfile("macro_s" .. currentSlot .. ".json")
-        end)
-    end
-
-    refreshSlots()
-    status.Text = "Deleted S" .. currentSlot
-end)
-
-clearReplayBtn.MouseButton1Click:Connect(function()
+stopReplayBtn.MouseButton1Click:Connect(function()
     autoReplay = false
-    autoPlay = false
     clearReplayFlag()
-
     arBtn.Text = "Auto-Replay: OFF"
     arBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    status.Text = "Replay off"
+end)
+
+stopPlayBtn.MouseButton1Click:Connect(function()
+    autoPlay = false
 
     apBtn.Text = "Auto-Play: OFF"
     apBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
@@ -314,7 +315,7 @@ clearReplayBtn.MouseButton1Click:Connect(function()
         writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = false}))
     end
 
-    status.Text = "Auto disabled"
+    status.Text = "Play off"
 end)
     for i = 1, SLOTS do
         local active = i == currentSlot

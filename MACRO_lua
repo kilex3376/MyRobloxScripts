@@ -189,6 +189,16 @@ local function waitAndClickPlayAgain(timeout)
                 VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
             end)
 
+            task.wait(1)
+
+            local stillHere = Players.LocalPlayer.PlayerGui:FindFirstChild("GameGui")
+            if stillHere and stillHere:FindFirstChild("EndScreen") then
+                warn("[Macro] Replay button did not actually teleport, forcing rejoin")
+
+                local TeleportService = game:GetService("TeleportService")
+                TeleportService:Teleport(game.PlaceId, Players.LocalPlayer)
+            end
+
             return true
         end
 

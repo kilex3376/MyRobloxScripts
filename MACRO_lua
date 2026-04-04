@@ -400,8 +400,24 @@ local function startPlay()
             end
         end
 
-        playing = false
         autoSaveAll()
+
+        status.Text = "Macro finished, waiting for victory..."
+
+        local gui = Players.LocalPlayer:WaitForChild("PlayerGui")
+        while true do
+            local gameGui = gui:FindFirstChild("GameGui")
+            local endScreen = gameGui and gameGui:FindFirstChild("EndScreen")
+            local replay = endScreen and endScreen:FindFirstChild("Replay")
+
+            if replay and replay.Visible then
+                break
+            end
+
+            task.wait(1)
+        end
+
+        playing = false
 
         if autoReplay then
             setReplayFlag(currentSlot)
@@ -479,8 +495,8 @@ task.spawn(function()
     refreshSlots()
     clearReplayFlag()
 
-    status.Text = "Restarting in 2s..."
-    task.wait(2)
+    status.Text = "Restarting in 5s..."
+    task.wait(5)
 
     setReplayFlag(currentSlot)
     startPlay()

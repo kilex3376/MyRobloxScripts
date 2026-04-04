@@ -152,17 +152,29 @@ task.spawn(function()
         local gameGui = lp.PlayerGui:FindFirstChild("GameGui")
         local endScreen = gameGui and gameGui:FindFirstChild("EndScreen")
         local replay = endScreen and endScreen:FindFirstChild("Replay")
+        local title = endScreen and (endScreen:FindFirstChild("Title") or endScreen:FindFirstChild("Result") or endScreen:FindFirstChild("Status"))
 
         if replay and replay.Visible then
-            if autoReplay then
-                setReplayFlag(currentSlot)
-                statusLbl.Text = "REPLAYING..."
-                clickReplayButton(replay)
-                task.wait(0.5)
-                pcall(function()
-                    TeleportService:Teleport(game.PlaceId, lp)
-                end)
+            local won = false
+
+            if title and title:IsA("TextLabel") then
+                local txt = string.lower(title.Text)
+                won = txt:find("victory") or txt:find("win") or txt:find("clear")
+            else
+                won = true
             end
+
+            if autoReplay and won then
+                setReplayFlag(currentSlot)
+                statusLbl.Text = "VICTORY - REPLAYING"
+                task.wait(1)
+                clickReplayButton(replay)
+                task.wait(1)
+            else
+                clearReplayFlag()
+                statusLbl.Text = won and "VICTORY" or "DEFEAT"
+            end
+
             break
         end
 
@@ -228,6 +240,18 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
                     break
                 end
             end
+        elseif self.Name == "SellTower" or self.Name == "DeleteTower" then
+            for index, tower in pairs(placed) do
+                if tower == args[1] then
+                    table.insert(allMacros[currentSlot], {
+                        action = "delete",
+                        index = index,
+                        t = os.clock() - startTime
+                    })
+                    placed[index] = nil
+                    break
+                end
+            end
         elseif self == SkipWaveRemote then
             table.insert(allMacros[currentSlot], {
                 action = "skip",
@@ -250,18 +274,36 @@ startTime = os.clock()
 statusLbl.Text = "RECORDING..."
 
 task.spawn(function()
+    local alreadyDeleted = {}
+
     while recording do
         for index, tower in pairs(placed) do
-            if tower and tower.Parent == nil then
-                table.insert(allMacros[currentSlot], {
-                    action = "delete",
-                    index = index,
-                    t = os.clock() - startTime
-                })
-                placed[index] = nil
+            if tower and not alreadyDeleted[index] then
+                local removed = false
+
+                if tower.Parent == nil then
+                    removed = true
+                else
+                    pcall(function()
+                        if tower:GetAttribute("Sold") == true or tower:GetAttribute("Deleted") == true then
+                            removed = true
+                        end
+                    end)
+                end
+
+                if removed then
+                    alreadyDeleted[index] = true
+                    table.insert(allMacros[currentSlot], {
+                        action = "delete",
+                        index = index,
+                        t = os.clock() - startTime
+                    })
+                    placed[index] = nil
+                end
             end
         end
-        task.wait(0.2)
+
+        task.wait(0.1)
     end
 end)
 
@@ -310,13 +352,24 @@ end
 
 end)
 
-delBtn.MouseButton1Click:Connect(function() allMacros[currentSlot] = {}
+delBtn.MouseButton1Click:Connect(function() playing = false recording = false
+
+allMacros[currentSlot] = {}
+placed = {}
 
 if writefile then
     pcall(function()
-        delfile("macro_s" .. currentSlot .. ".json")
+        writefile("macro_s" .. currentSlot .. ".json", "[]")
+    end)
+
+    pcall(function()
+        if isfile and isfile("macro_s" .. currentSlot .. ".json") then
+            delfile("macro_s" .. currentSlot .. ".json")
+        end
     end)
 end
+
+allMacros[currentSlot] = {}
 
 updateUI()
 statusLbl.Text = "DELETED SLOT " .. currentSlot

@@ -72,7 +72,7 @@ end)
 
 -- ИНТЕРФЕЙС
 local ui = Instance.new("ScreenGui", Players.LocalPlayer.PlayerGui)
-ui.Name = "Macro_FastStart_V5"
+ui.Name = "Macro_FastStart_V5_FIXED"
 ui.ResetOnSpawn = false
 
 local main = Instance.new("Frame", ui)
@@ -84,7 +84,7 @@ main.Draggable = true
 Instance.new("UICorner", main)
 
 local settings = Instance.new("Frame", ui)
-settings.Size = UDim2.new(0, 200, 0, 230) -- Широкая рамка для перемещения
+settings.Size = UDim2.new(0, 200, 0, 230)
 settings.Position = UDim2.new(0, 260, 0.5, -115)
 settings.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 settings.Active = true
@@ -210,33 +210,34 @@ end)
 playBtn.MouseButton1Click:Connect(startPlay)
 emBtn.MouseButton1Click:Connect(function() playing = false; recording = false; status.Text = "STOPPED" end)
 
+-- ИСПРАВЛЕННАЯ КНОПКА DELETE
 delBtn.MouseButton1Click:Connect(function() 
     macro = {}
     allMacros[currentSlot] = {}
-    if writefile then pcall(function("macro_s"..currentSlot..".json")) end
+    if delfile then pcall(function() delfile("macro_s"..currentSlot..".json") end) end
     refreshSlots()
     status.Text = "DELETED"
 end)
 
--- ФИНАЛЬНАЯ ЛОГИКА АВТОЗАПУСКА (МАКСИМАЛЬНО БЫСТРАЯ)
+-- ФИНАЛЬНАЯ ЛОГИКА АВТОЗАПУСКА
 task.spawn(function()
-    task.wait(1.5) -- Минимальная задержка на прогрузку скрипта
+    task.wait(1.5)
     
     local replaySlot = getReplayFlag()
     local targetSlot = replaySlot or (autoPlay and currentSlot)
     
     if targetSlot then
         currentSlot = targetSlot
-        if readfile and isfile("macro_s"..currentSlot..".json") then
+        if readfile and isfile and isfile("macro_s"..currentSlot..".json") then
             local ok, data = pcall(function() return HttpService:JSONDecode(readfile("macro_s"..currentSlot..".json")) end)
-            if ok then macro = data; allMacros[currentSlot] = data end
+            if ok and data then macro = data; allMacros[currentSlot] = data end
         end
         
-        if replaySlot then writefile(FLAG_FILE, "{}") end
+        if replaySlot then clearReplayFlag() end
         
         refreshSlots()
         status.Text = "FAST START..."
-        task.wait(0.5) -- Почти мгновенный запуск
+        task.wait(0.5)
         startPlay()
     end
 end)

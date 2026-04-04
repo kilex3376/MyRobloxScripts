@@ -19,7 +19,6 @@ local autoPlay = false
 local FLAG_FILE = "macro_autoreplay_v2.json"
 local SETTINGS_FILE = "macro_settings.json"
 
--- СИСТЕМА ФАЙЛОВ
 local function saveSettings()
     if writefile then
         pcall(function()
@@ -47,13 +46,16 @@ local function setReplayFlag(slot)
     if writefile then pcall(function() writefile(FLAG_FILE, HttpService:JSONEncode({slot = slot})) end) end
 end
 
+local function clearReplayFlag()
+    if writefile then pcall(function() writefile(FLAG_FILE, "{}") end) end
+end
+
 local function getReplayFlag()
     if not readfile or not isfile or not isfile(FLAG_FILE) then return nil end
     local ok, data = pcall(function() return HttpService:JSONDecode(readfile(FLAG_FILE)) end)
     return (ok and data and data.slot) or nil
 end
 
--- ИНИЦИАЛИЗАЦИЯ (БЫСТРЫЙ ПОИСК)
 task.spawn(function()
     while not SpawnTower do
         for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
@@ -63,16 +65,15 @@ task.spawn(function()
         pcall(function()
             local hud = Players.LocalPlayer.PlayerGui:FindFirstChild("HUD")
             if hud then
-                MoneyValue = hud:WaitForChild("Main"):WaitForChild("Top"):WaitForChild("Cash")
+                MoneyValue = hud.Main.Top.Cash
             end
         end)
-        task.wait(0.5) -- Опрашиваем чаще для быстрого старта
+        task.wait(0.5)
     end
 end)
 
--- ИНТЕРФЕЙС
 local ui = Instance.new("ScreenGui", Players.LocalPlayer.PlayerGui)
-ui.Name = "Macro_FastStart_V5_FIXED"
+ui.Name = "Macro_V5_Final"
 ui.ResetOnSpawn = false
 
 local main = Instance.new("Frame", ui)
@@ -130,8 +131,6 @@ local function createBtn(txt, parent, y, color)
     b.BackgroundColor3 = color or Color3.fromRGB(60, 60, 60)
     b.Text = txt
     b.TextColor3 = Color3.new(1,1,1)
-    b.Font = Enum.Font.SourceSansBold
-    b.TextSize = 16
     Instance.new("UICorner", b)
     return b
 end
@@ -145,7 +144,6 @@ local apBtn = createBtn("Auto-Play: OFF", settings, 65)
 local delBtn = createBtn("DELETE DATA", settings, 110, Color3.fromRGB(120, 40, 40))
 local emBtn = createBtn("STOP ALL", settings, 155, Color3.fromRGB(70, 70, 70))
 
--- ЛОГИКА КНОПОК
 loadSettings()
 local function updateUI()
     arBtn.Text = "Auto-Replay: " .. (autoReplay and "ON" or "OFF")
@@ -158,7 +156,6 @@ updateUI()
 arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay; updateUI(); saveSettings() end)
 apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay; updateUI(); saveSettings() end)
 
--- ФУНКЦИЯ ИГРЫ
 local function startPlay()
     if playing or #macro == 0 then return end
     playing = true
@@ -176,7 +173,6 @@ local function startPlay()
     end)
 end
 
--- ЗАПИСЬ (HOOK)
 recBtn.MouseButton1Click:Connect(function()
     if playing then return end
     macro = {}
@@ -203,43 +199,31 @@ end)
 stopBtn.MouseButton1Click:Connect(function()
     recording = false
     if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(macro)) end
-    status.Text = "SAVED S"..currentSlot
+    status.Text = "SAVED"
     refreshSlots()
 end)
 
 playBtn.MouseButton1Click:Connect(startPlay)
 emBtn.MouseButton1Click:Connect(function() playing = false; recording = false; status.Text = "STOPPED" end)
-
--- ИСПРАВЛЕННАЯ КНОПКА DELETE
-delBtn.MouseButton1Click:Connect(function() 
+delBtn.MouseButton1Click:Connect(function()
     macro = {}
-    allMacros[currentSlot] = {}
     if delfile then pcall(function() delfile("macro_s"..currentSlot..".json") end) end
-    refreshSlots()
     status.Text = "DELETED"
 end)
 
--- ФИНАЛЬНАЯ ЛОГИКА АВТОЗАПУСКА
 task.spawn(function()
-    task.wait(1.5)
-    
-    local replaySlot = getReplayFlag()
-    local targetSlot = replaySlot or (autoPlay and currentSlot)
-    
-    if targetSlot then
-        currentSlot = targetSlot
-        if readfile and isfile and isfile("macro_s"..currentSlot..".json") then
-            local ok, data = pcall(function() return HttpService:JSONDecode(readfile("macro_s"..currentSlot..".json")) end)
-            if ok and data then macro = data; allMacros[currentSlot] = data end
+    task.wait(2)
+    local rSlot = getReplayFlag()
+    local tSlot = rSlot or (autoPlay and currentSlot)
+    if tSlot then
+        currentSlot = tSlot
+        if isfile and isfile("macro_s"..currentSlot..".json") then
+            macro = HttpService:JSONDecode(readfile("macro_s"..currentSlot..".json"))
         end
-        
-        if replaySlot then clearReplayFlag() end
-        
+        if rSlot then clearReplayFlag() end
         refreshSlots()
-        status.Text = "FAST START..."
-        task.wait(0.5)
+        task.wait(1)
         startPlay()
     end
 end)
-
 refreshSlots()

@@ -410,7 +410,9 @@ local function startPlay()
             local endScreen = gameGui and gameGui:FindFirstChild("EndScreen")
             local replay = endScreen and endScreen:FindFirstChild("Replay")
 
-            if replay and replay.Visible then
+            if endScreen and endScreen.Visible and replay and replay.Visible then
+                status.Text = "Victory screen loaded"
+                task.wait(8)
                 break
             end
 

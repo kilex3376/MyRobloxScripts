@@ -48,8 +48,10 @@ local startTime = 0
 local lastSpawnTime = 0
 local lastSpawnPos
 local autoReplay = false
+local autoPlay = false
 
 local FLAG_FILE = "macro_autoreplay_v2.json"
+local AUTOPLAY_FILE = "macro_autoplay.json"
 
 local function autoSaveAll()
     if not writefile then return end
@@ -309,6 +311,9 @@ local recordButton = makeButton("Record", 58)
 local stopButton = makeButton("Stop", 94)
 local playButton = makeButton("Play", 130)
 local arBtn = makeButton("Auto-Replay: OFF", 166)
+local apBtn = makeButton("Auto-Play: OFF", 202)
+frame.Size = UDim2.new(0, 190, 0, 270)
+status.Position = UDim2.new(0,0,0,245)
 
 status = Instance.new("TextLabel")
 status.Parent = frame
@@ -342,6 +347,36 @@ arBtn.MouseButton1Click:Connect(function()
 
     if not autoReplay then
         clearReplayFlag()
+    end
+end)
+
+if readfile and isfile and isfile(AUTOPLAY_FILE) then
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(AUTOPLAY_FILE))
+    end)
+
+    if ok and data and data.enabled then
+        autoPlay = true
+        apBtn.Text = "Auto-Play: ON"
+        apBtn.BackgroundColor3 = Color3.fromRGB(30, 140, 30)
+    end
+end
+
+apBtn.MouseButton1Click:Connect(function()
+    autoPlay = not autoPlay
+
+    apBtn.Text = "Auto-Play: " .. (autoPlay and "ON" or "OFF")
+    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30, 140, 30) or Color3.fromRGB(40, 40, 40)
+
+    if writefile then
+        writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = autoPlay}))
+    end
+
+    if autoPlay and not playing then
+        task.spawn(function()
+            task.wait(2)
+            startPlay()
+        end)
     end
 end)
 
@@ -397,6 +432,24 @@ local function startPlay()
                         built[step.index] = result
                     end
                 end
+
+            elseif step.action == "delete" then
+                if built[step.index] then
+                    pcall(function()
+                        local tower = built[step.index]
+
+                        for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
+                            if remote.Name == "SellTower" or remote.Name == "DeleteTower" or remote.Name == "RemoveTower" then
+                                remote:InvokeServer(tower)
+                                break
+                            end
+                        end
+
+                        built[step.index] = nil
+                    end)
+                end
+            end
+        end
             end
         end
 
@@ -501,6 +554,26 @@ recordButton.MouseButton1Click:Connect(function()
     placed = {}
     startTime = os.clock()
     recording = true
+
+    task.spawn(function()
+        local oldCount = #placed
+
+        while recording do
+            task.wait(0.2)
+
+            for i, tower in pairs(placed) do
+                if tower and tower.Parent == nil then
+                    table.insert(macro, {
+                        action = "delete",
+                        index = i,
+                        t = os.clock() - startTime
+                    })
+
+                    placed[i] = nil
+                end
+            end
+        end
+    end)
 
     status.Text = "Recording"
     refreshSlots()

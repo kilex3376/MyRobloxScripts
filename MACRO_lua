@@ -40,7 +40,7 @@ local function getReplayFlag()
     return nil
 end
 
---================ GUI СТРУКТУРА (КАК НА ФОТО, НО МЕНЬШЕ) ================--
+--================ GUI СТРУКТУРА ================--
 local ui = Instance.new("ScreenGui", lp.PlayerGui)
 ui.Name = "MacroUI_Fixed"
 ui.ResetOnSpawn = false
@@ -48,7 +48,7 @@ ui.ResetOnSpawn = false
 local function createPanel(name, pos)
     local f = Instance.new("Frame", ui)
     f.Name = name
-    f.Size = UDim2.new(0, 150, 0, 200) -- Уменьшенный размер
+    f.Size = UDim2.new(0, 150, 0, 200)
     f.Position = pos
     f.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     f.BorderSizePixel = 0
@@ -57,7 +57,6 @@ local function createPanel(name, pos)
     return f
 end
 
--- Левая панель (Main) и Правая (Settings)
 local mainPanel = createPanel("Main", UDim2.new(0, 20, 0.5, -100))
 local setPanel = createPanel("Settings", UDim2.new(0, 180, 0.5, -100))
 
@@ -90,18 +89,15 @@ local function createBtn(parent, txt, pos, size, color)
     return b
 end
 
--- Кнопки слотов (Левая панель)
 local slotBtns = {}
 for i = 1, SLOTS do
     slotBtns[i] = createBtn(mainPanel, "S"..i.." (0)", UDim2.new(0, 8 + (i-1)*46, 0, 30), UDim2.new(0, 42, 0, 25))
 end
 
--- Основные кнопки (Левая панель)
 local recBtn = createBtn(mainPanel, "RECORD", UDim2.new(0, 10, 0, 65), UDim2.new(1, -20, 0, 30))
 local stopBtn = createBtn(mainPanel, "STOP RECORD", UDim2.new(0, 10, 0, 100), UDim2.new(1, -20, 0, 30))
 local playBtn = createBtn(mainPanel, "PLAY MACRO", UDim2.new(0, 10, 0, 135), UDim2.new(1, -20, 0, 30))
 
--- Кнопки настроек (Правая панель)
 local arBtn = createBtn(setPanel, "Auto-Replay: OFF", UDim2.new(0, 10, 0, 30), UDim2.new(1, -20, 0, 30))
 local apBtn = createBtn(setPanel, "Auto-Play: OFF", UDim2.new(0, 10, 0, 65), UDim2.new(1, -20, 0, 30))
 local delBtn = createBtn(setPanel, "DELETE SLOT DATA", UDim2.new(0, 10, 0, 100), UDim2.new(1, -20, 0, 30), Color3.fromRGB(120, 35, 35))
@@ -112,7 +108,9 @@ local function updateUI()
         slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(80, 70, 180) or Color3.fromRGB(40, 40, 40)
         slotBtns[i].Text = "S"..i.." ("..#allMacros[i]..")"
     end
-    statusLbl.Text = "Slot " .. currentSlot .. " Selected"
+    if not playing and not recording then
+        statusLbl.Text = "Slot " .. currentSlot .. " Selected"
+    end
 end
 
 for i = 1, SLOTS do
@@ -121,7 +119,7 @@ for i = 1, SLOTS do
     end)
 end
 
---================ ЛОГИКА (ИСПРАВЛЕНА ПРОБЛЕМА ДУБЛЕЙ) ================--
+--================ ЛОГИКА ВОСПРОИЗВЕДЕНИЯ И ЗАПИСИ ================--
 local function startPlay()
     if playing or #allMacros[currentSlot] == 0 then return end
     playing = true
@@ -151,7 +149,7 @@ local function startPlay()
             end)
         end
         
-        statusLbl.Text = "Waiting Victory..."
+        if playing then statusLbl.Text = "Waiting Victory..." end
         
         local gui = lp.PlayerGui:WaitForChild("GameGui")
         while playing do
@@ -170,7 +168,7 @@ local function startPlay()
             task.wait(1)
         end
         playing = false
-        if not autoReplay then statusLbl.Text = "Done" end
+        if not autoReplay then updateUI() end
     end)
 end
 
@@ -198,12 +196,11 @@ recBtn.MouseButton1Click:Connect(function()
         local method, args = getnamecallmethod(), {...}
         if recording and not checkcaller() and method == "InvokeServer" then
             
-            -- ВОТ ЗДЕСЬ ИСПРАВЛЕН БАГ СО СПАВНОМ ДОХУЯ ЮНИТОВ
             if self == SpawnTower then
-                if os.clock() - lastSpawnTime < 0.2 then return old(self, ...) end -- Анти-спам
+                if os.clock() - lastSpawnTime < 0.2 then return old(self, ...) end 
                 lastSpawnTime = os.clock()
                 
-                local result = old(self, ...) -- Ждем реального спавна от игры
+                local result = old(self, ...) 
                 if result and typeof(result) == "Instance" then
                     local idx = #placed + 1
                     placed[idx] = result
@@ -227,13 +224,13 @@ end)
 stopBtn.MouseButton1Click:Connect(function()
     recording = false
     statusLbl.Text = "Saved"
-    if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
+    if writefile then pcall(function() writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end) end
+    task.wait(1)
     updateUI()
 end)
 
 playBtn.MouseButton1Click:Connect(startPlay)
 
--- Кнопки правой панели
 arBtn.MouseButton1Click:Connect(function()
     autoReplay = not autoReplay
     arBtn.Text = "Auto-Replay: " .. (autoReplay and "ON" or "OFF")
@@ -241,11 +238,19 @@ arBtn.MouseButton1Click:Connect(function()
     if not autoReplay then clearReplayFlag() end
 end)
 
+-- ИСПРАВЛЕН АВТО-ПЛЭЙ (Запуск по кнопке)
 apBtn.MouseButton1Click:Connect(function()
     autoPlay = not autoPlay
     apBtn.Text = "Auto-Play: " .. (autoPlay and "ON" or "OFF")
     apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30, 140, 30) or Color3.fromRGB(40, 40, 40)
-    if writefile then writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = autoPlay})) end
+    if writefile then pcall(function() writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = autoPlay})) end) end
+    
+    if autoPlay and not playing then
+        task.spawn(function()
+            task.wait(1)
+            startPlay()
+        end)
+    end
 end)
 
 delBtn.MouseButton1Click:Connect(function()
@@ -263,16 +268,28 @@ eStopBtn.MouseButton1Click:Connect(function()
     clearReplayFlag()
     arBtn.Text, arBtn.BackgroundColor3 = "Auto-Replay: OFF", Color3.fromRGB(40, 40, 40)
     apBtn.Text, apBtn.BackgroundColor3 = "Auto-Play: OFF", Color3.fromRGB(40, 40, 40)
+    if writefile then pcall(function() writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = false})) end) end
     statusLbl.Text = "EMERGENCY STOP"
 end)
 
--- Загрузка при старте
+--================ ЗАГРУЗКА ПРИ СТАРТЕ ================--
 task.spawn(function()
     for i = 1, SLOTS do
         if isfile and isfile("macro_s"..i..".json") then
             pcall(function() allMacros[i] = HttpService:JSONDecode(readfile("macro_s"..i..".json")) end)
         end
     end
+
+    -- Читаем файл Auto-Play
+    if isfile and isfile(AUTOPLAY_FILE) then
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(AUTOPLAY_FILE)) end)
+        if ok and data and data.enabled then
+            autoPlay = true
+            apBtn.Text = "Auto-Play: ON"
+            apBtn.BackgroundColor3 = Color3.fromRGB(30, 140, 30)
+        end
+    end
+
     updateUI()
 
     local s = getReplayFlag()
@@ -282,6 +299,10 @@ task.spawn(function()
         arBtn.Text = "Auto-Replay: ON"
         arBtn.BackgroundColor3 = Color3.fromRGB(30, 140, 30)
         updateUI()
+        task.wait(5)
+        startPlay()
+    elseif autoPlay then
+        -- Если авто-плей включен (но это не реплей), запускаем через 5 сек
         task.wait(5)
         startPlay()
     end

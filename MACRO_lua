@@ -84,6 +84,44 @@ Players.PlayerRemoving:Connect(function(player)
     end
 end)
 
+-- // Searches PlayerGui for the Play Again / Replay button and clicks it.
+-- // Waits up to `timeout` seconds for it to appear (the victory screen
+-- // takes a moment to show up after the last wave).
+local function waitAndClickPlayAgain(timeout)
+    local keywords = {"play again", "replay", "jogar novamente", "spielen"}
+    local waited = 0
+    while waited < timeout do
+        for _, v in ipairs(Players.LocalPlayer.PlayerGui:GetDescendants()) do
+            if v.Visible and (v:IsA("TextButton") or v:IsA("ImageButton")) then
+                local text = (v.Text or ""):lower()
+                local name = v.Name:lower()
+                local match = false
+                for _, kw in ipairs(keywords) do
+                    if text:find(kw, 1, true) or name:find(kw, 1, true) then
+                        match = true break
+                    end
+                end
+                -- Also match by name fragments common in tower defense games
+                if name:find("playagain") or name:find("replay") or name:find("rematch") then
+                    match = true
+                end
+                if match then
+                    -- Try executor firesignal first, fall back to Fire()
+                    pcall(function()
+                        if firesignal then firesignal(v.MouseButton1Click)
+                        else v.MouseButton1Click:Fire() end
+                    end)
+                    return true
+                end
+            end
+        end
+        task.wait(1)
+        waited += 1
+    end
+    return false
+end
+
+-- // GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "MacroGUI"
 gui.ResetOnSpawn = false
@@ -198,9 +236,7 @@ arBtn.MouseButton1Click:Connect(function()
     arBtn.BackgroundColor3 = autoReplay
         and Color3.fromRGB(30, 140, 30)
         or  Color3.fromRGB(40, 40, 40)
-    if not autoReplay then
-        clearReplayFlag()
-    end
+    if not autoReplay then clearReplayFlag() end
 end)
 
 local function startPlay()
@@ -224,6 +260,9 @@ local function startPlay()
     status.Text = "Playing S"..currentSlot
 
     task.spawn(function()
+        -- built[i] always holds the CURRENT instance of tower i.
+        -- On upgrade the game may replace the instance, so we update
+        -- built[i] with whatever InvokeServer returns after upgrading.
         local built = {}
         local begin = os.clock()
 
@@ -243,15 +282,30 @@ local function startPlay()
                 local ok, tower = pcall(function()
                     return SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z))
                 end)
-                if ok then built[step.index] = tower end
+                if ok and tower then built[step.index] = tower end
                 task.wait(0.05)
 
             elseif step.action == "upgrade" then
+                -- FIX: some games return the new (replaced) tower instance
+                -- from UpgradeTower. We capture it and update built[] so
+                -- future upgrades on the same tower still work past level 2.
                 if built[step.index] then
-                    local ok = pcall(function() UpgradeTower:InvokeServer(built[step.index]) end)
-                    if not ok then
+                    local ok, result = pcall(function()
+                        return UpgradeTower:InvokeServer(built[step.index])
+                    end)
+                    if ok then
+                        -- If the server returned a new instance, update our ref
+                        if typeof(result) == "Instance" then
+                            built[step.index] = result
+                        end
+                    else
                         task.wait(0.4)
-                        pcall(function() UpgradeTower:InvokeServer(built[step.index]) end)
+                        local ok2, result2 = pcall(function()
+                            return UpgradeTower:InvokeServer(built[step.index])
+                        end)
+                        if ok2 and typeof(result2) == "Instance" then
+                            built[step.index] = result2
+                        end
                     end
                 end
                 task.wait(0.1)
@@ -278,8 +332,20 @@ local function startPlay()
         autoSaveAll()
 
         if autoReplay then
+            -- Write flag BEFORE clicking Play Again so it survives the rejoin
             setReplayFlag(currentSlot)
-            status.Text = "Done! Click Replay in game."
+            status.Text = "Clicking Play Again..."
+
+            -- Wait up to 30s for the victory/defeat screen then auto-click
+            local clicked = waitAndClickPlayAgain(30)
+            if clicked then
+                status.Text = "Clicked! Rejoining..."
+            else
+                -- Button not found — game might use a remote directly.
+                -- Nothing more we can do; player must click manually.
+                status.Text = "Click Play Again manually"
+            end
+            -- Script will die on rejoin; boot check below restarts everything.
         else
             clearReplayFlag()
             status.Text = "Done + Saved (S"..currentSlot..")"
@@ -287,6 +353,7 @@ local function startPlay()
     end)
 end
 
+-- // Namecall hook
 local old
 old = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
@@ -319,10 +386,13 @@ old = hookmetamethod(game, "__namecall", function(self, ...)
             local tower = args[1]
             for i = #placed, 1, -1 do
                 if placed[i] == tower then
+                    -- Update placed[] reference in case the game returns a new instance
+                    local result = old(self, ...)
+                    if typeof(result) == "Instance" then placed[i] = result end
                     table.insert(macro, {action="upgrade", index=i, t=os.clock()-startTime})
                     status.Text = "Upgrade "..i
                     refreshSlots()
-                    break
+                    return result
                 end
             end
         elseif SkipWave and self == SkipWave and (method == "InvokeServer" or method == "FireServer") then
@@ -364,6 +434,7 @@ playButton.MouseButton1Click:Connect(function()
     startPlay()
 end)
 
+-- // BOOT CHECK: auto-start after rejoin
 task.spawn(function()
     local flagSlot = getReplayFlag()
     if not flagSlot then return end

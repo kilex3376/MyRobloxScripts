@@ -26,7 +26,7 @@ local placed = {}
 local startTime = 0
 local autoReplay, autoPlay = false, false
 
-local CONFIG_FILE = "macro_v7_config.json"
+local CONFIG_FILE = "macro_v8_config.json"
 
 local function saveConfig()
     if writefile then
@@ -60,15 +60,17 @@ local function forceClick(btn)
     end)
 end
 
---================ GUI ================--
+--================ GUI С ПЕРЕТАСКИВАНИЕМ ================--
 local ui = Instance.new("ScreenGui", lp.PlayerGui)
-ui.Name = "Macro_V7_Final"
+ui.Name = "Macro_V8_Draggable"
 ui.ResetOnSpawn = false
 
 local main = Instance.new("Frame", ui)
 main.Size = UDim2.new(0, 150, 0, 200)
 main.Position = UDim2.new(0, 15, 0.5, -100)
 main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+main.Active = true
+main.Draggable = true -- Теперь можно двигать
 Instance.new("UICorner", main)
 
 local function btn(p, txt, y, h, color)
@@ -83,16 +85,26 @@ end
 local slotBtn = btn(main, "SLOT: "..currentSlot, 10, 25)
 local recBtn = btn(main, "START RECORD", 40, 35, Color3.fromRGB(80, 35, 35))
 local playBtn = btn(main, "PLAY MACRO", 80, 35, Color3.fromRGB(35, 80, 35))
-local arBtn = btn(main, "AUTO REPLAY: OFF", 120, 30)
-local apBtn = btn(main, "AUTO PLAY: OFF", 155, 30)
+local arBtn = btn(main, "REPLAY: OFF", 120, 30)
+local apBtn = btn(main, "AUTO: OFF", 155, 30)
 
 local function updateUI()
     slotBtn.Text = "SLOT: "..currentSlot.." ("..#allMacros[currentSlot]..")"
     arBtn.Text = "REPLAY: "..(autoReplay and "ON" or "OFF")
     arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(30, 130, 30) or Color3.fromRGB(45, 45, 45)
-    apBtn.Text = "AUTO PLAY: "..(autoPlay and "ON" or "OFF")
+    apBtn.Text = "AUTO: "..(autoPlay and "ON" or "OFF")
     apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30, 130, 30) or Color3.fromRGB(45, 45, 45)
-    recBtn.Text = recording and "RECORDING..." or "START RECORD"
+    recBtn.Text = recording and "STOP & SAVE" or "START RECORD"
+    recBtn.BackgroundColor3 = recording and Color3.fromRGB(130, 30, 30) or Color3.fromRGB(80, 35, 35)
+end
+
+--================ ЛОГИКА ОСТАНОВКИ И СОХРАНЕНИЯ ================--
+local function stopAndSave()
+    recording = false
+    if writefile then 
+        writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) 
+    end
+    updateUI()
 end
 
 --================ ЛОГИКА PLAY ================--
@@ -126,7 +138,6 @@ local function startPlay()
             end)
         end
         
-        -- Пост-проверка на Replay
         while playing do
             local replay = lp.PlayerGui:FindFirstChild("Play Again", true)
             if replay and replay.Visible and autoReplay then
@@ -143,7 +154,7 @@ local function startPlay()
     end)
 end
 
---================ ХУК ЗАПИСИ ================--
+--================ ХУКИ ================--
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
     local args = {...}
@@ -167,25 +178,24 @@ local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     return old(self, ...)
 end)
 
--- Слежка за кнопками UI во время записи
+-- Слежка за UI
 RunService.Heartbeat:Connect(function()
     if recording then
         local replay = lp.PlayerGui:FindFirstChild("Play Again", true)
         if replay and replay.Visible then
             local connection; connection = replay.MouseButton1Click:Connect(function()
-                table.insert(allMacros[currentSlot], {action="rejoin", t=os.clock()-startTime})
-                recording = false -- АВТО-СТОП ПРИ НАЖАТИИ REPLAY
-                if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
-                updateUI()
-                connection:Disconnect()
+                if recording then
+                    table.insert(allMacros[currentSlot], {action="rejoin", t=os.clock()-startTime})
+                    stopAndSave() -- Авто-стоп при финальной кнопке
+                    connection:Disconnect()
+                end
             end)
         end
         
-        -- Запись ручного скипа через кнопку
         local skip = lp.PlayerGui:FindFirstChild("Autoskip", true)
         if skip and skip:IsA("GuiButton") then
              skip.MouseButton1Click:Connect(function()
-                table.insert(allMacros[currentSlot], {action="skip", t=os.clock()-startTime})
+                if recording then table.insert(allMacros[currentSlot], {action="skip", t=os.clock()-startTime}) end
              end)
         end
     end
@@ -198,7 +208,13 @@ end)
 
 recBtn.MouseButton1Click:Connect(function()
     if playing then return end
-    allMacros[currentSlot], placed, startTime, recording = {}, {}, os.clock(), true
+    if not recording then
+        -- СТАРТ ЗАПИСИ
+        allMacros[currentSlot], placed, startTime, recording = {}, {}, os.clock(), true
+    else
+        -- СТОП ЗАПИСИ (Второй клик)
+        stopAndSave()
+    end
     updateUI()
 end)
 

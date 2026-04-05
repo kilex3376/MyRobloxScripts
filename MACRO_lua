@@ -36,11 +36,11 @@ local ui = Instance.new("ScreenGui") ui.Name = "MacroUI_Fixed" ui.ResetOnSpawn =
 
 local function createPanel(name, pos, size) local f = Instance.new("Frame") f.Name = name f.Parent = ui f.Size = size f.Position = pos f.BackgroundColor3 = Color3.fromRGB(25, 25, 25) f.BorderSizePixel = 0 f.Active = true f.Draggable = true local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 8) c.Parent = f return f end
 
-local mainPanel = createPanel("Main", UDim2.new(0, 20, 0.5, -120), UDim2.new(0, 175, 0, 255))
+local mainPanel = createPanel("Main", UDim2.new(0, 20, 0.5, -120), UDim2.new(0, 175, 0, 180)) local settingsPanel = createPanel("Settings", UDim2.new(0, 205, 0.5, -120), UDim2.new(0, 185, 0, 150))
 
 local function addTitle(parent, text) local t = Instance.new("TextLabel") t.Parent = parent t.Size = UDim2.new(1, 0, 0, 25) t.BackgroundTransparency = 1 t.Text = text t.TextColor3 = Color3.new(1, 1, 1) t.Font = Enum.Font.GothamBold t.TextSize = 12 return t end
 
-addTitle(mainPanel, "MACRO")
+addTitle(mainPanel, "MACRO") addTitle(settingsPanel, "AUTO / SETTINGS")
 
 local statusLbl = Instance.new("TextLabel") statusLbl.Parent = mainPanel statusLbl.Size = UDim2.new(1, 0, 0, 20) statusLbl.Position = UDim2.new(0, 0, 1, -22) statusLbl.BackgroundTransparency = 1 statusLbl.TextColor3 = Color3.fromRGB(180, 180, 180) statusLbl.Font = Enum.Font.GothamMedium statusLbl.TextSize = 11 statusLbl.Text = "Slot 1 Selected"
 
@@ -48,7 +48,7 @@ local function createBtn(parent, txt, pos, size, color) local b = Instance.new("
 
 local slotBtns = {} for i = 1, SLOTS do slotBtns[i] = createBtn(mainPanel, "S"..i.." (0)", UDim2.new(0, 8 + (i - 1) * 54, 0, 30), UDim2.new(0, 48, 0, 25)) end
 
-local recBtn = createBtn(mainPanel, "RECORD", UDim2.new(0, 10, 0, 65), UDim2.new(1, -20, 0, 28)) local stopBtn = createBtn(mainPanel, "STOP RECORD", UDim2.new(0, 10, 0, 98), UDim2.new(1, -20, 0, 28)) local playBtn = createBtn(mainPanel, "PLAY", UDim2.new(0, 10, 0, 131), UDim2.new(1, -20, 0, 28)) local arBtn = createBtn(mainPanel, "AUTO REPLAY: OFF", UDim2.new(0, 10, 0, 164), UDim2.new(1, -20, 0, 28)) local apBtn = createBtn(mainPanel, "AUTO PLAY: OFF", UDim2.new(0, 10, 0, 197), UDim2.new(1, -20, 0, 28)) local delBtn = createBtn(mainPanel, "DELETE SLOT", UDim2.new(0, 10, 0, 230), UDim2.new(0.5, -15, 0, 20), Color3.fromRGB(120,35,35)) local stopAutoBtn = createBtn(mainPanel, "STOP", UDim2.new(0.5, 5, 0, 230), UDim2.new(0.5, -15, 0, 20), Color3.fromRGB(70,70,70))
+local recBtn = createBtn(mainPanel, "RECORD", UDim2.new(0, 10, 0, 65), UDim2.new(1, -20, 0, 28)) local stopBtn = createBtn(mainPanel, "STOP RECORD", UDim2.new(0, 10, 0, 98), UDim2.new(1, -20, 0, 28)) local playBtn = createBtn(mainPanel, "PLAY", UDim2.new(0, 10, 0, 131), UDim2.new(1, -20, 0, 28)) local arBtn = createBtn(settingsPanel, "AUTO REPLAY: OFF", UDim2.new(0, 10, 0, 30), UDim2.new(1, -20, 0, 28)) local apBtn = createBtn(settingsPanel, "AUTO PLAY: OFF", UDim2.new(0, 10, 0, 63), UDim2.new(1, -20, 0, 28)) local delBtn = createBtn(settingsPanel, "DELETE MACRO", UDim2.new(0, 10, 0, 96), UDim2.new(1, -20, 0, 22), Color3.fromRGB(120,35,35)) local stopAutoBtn = createBtn(settingsPanel, "STOP ALL", UDim2.new(0, 10, 0, 122), UDim2.new(1, -20, 0, 22), Color3.fromRGB(70,70,70))
 
 local function updateUI() for i = 1, SLOTS do slotBtns[i].BackgroundColor3 = i == currentSlot and Color3.fromRGB(80, 70, 180) or Color3.fromRGB(40, 40, 40) slotBtns[i].Text = "S" .. i .. " (" .. #allMacros[i] .. ")" end
 

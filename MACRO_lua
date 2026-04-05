@@ -155,21 +155,41 @@ task.spawn(function()
         local title = endScreen and (endScreen:FindFirstChild("Title") or endScreen:FindFirstChild("Result") or endScreen:FindFirstChild("Status"))
 
         if replay and replay.Visible then
-            local won = false
+            local visibleFor = 0
 
-            if title and title:IsA("TextLabel") then
-                local txt = string.lower(title.Text)
-                won = txt:find("victory") or txt:find("win") or txt:find("clear")
+            while replay and replay.Parent and replay.Visible and visibleFor < 3 do
+                task.wait(0.25)
+                visibleFor += 0.25
+            end
+
+            if autoReplay and replay and replay.Parent and replay.Visible then
+                statusLbl.Text = "REPLAYING"
+                setReplayFlag(currentSlot)
+                clickReplayButton(replay)
             else
-                won = true
+                clearReplayFlag()
+                statusLbl.Text = "MATCH FINISHED"
+            end
+
+            break
+                    elseif txt:find("defeat") or txt:find("lose") or txt:find("failed") then
+                        won = false
+                        break
+                    end
+                end
+
+                task.wait(0.25)
             end
 
             if autoReplay and won then
-                setReplayFlag(currentSlot)
-                statusLbl.Text = "VICTORY - REPLAYING"
-                task.wait(1)
-                clickReplayButton(replay)
-                task.wait(1)
+                statusLbl.Text = "VICTORY - WAITING REPLAY"
+                task.wait(2)
+
+                if replay.Parent and replay.Visible then
+                    setReplayFlag(currentSlot)
+                    clickReplayButton(replay)
+                    statusLbl.Text = "REPLAYING"
+                end
             else
                 clearReplayFlag()
                 statusLbl.Text = won and "VICTORY" or "DEFEAT"

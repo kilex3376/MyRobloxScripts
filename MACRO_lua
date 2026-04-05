@@ -1,12 +1,29 @@
+--================ НАСТРОЙКИ ПУТЕЙ ================--
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 
--- РЕМОУТЫ (Проверь названия, если в игре что-то меняли)
-local GameFolder = ReplicatedStorage:WaitForChild("Game")
-local PlaceTower = GameFolder.Functions:WaitForChild("PlaceTower")
-local UpgradeTower = GameFolder.Functions:WaitForChild("UpgradeTower")
-local RemoteReplay = GameFolder.Events:WaitForChild("Replay")
+-- Безопасный поиск папок (чтобы скрипт не вис вечно)
+local function safeWait(parent, name)
+    local obj = parent:WaitForChild(name, 5) -- Ждем максимум 5 секунд
+    if not obj then 
+        warn("!!! НЕ НАЙДЕНО: " .. name .. " в " .. parent.Name) 
+    end
+    return obj
+end
+
+local GameFolder = safeWait(ReplicatedStorage, "Game")
+local Functions = GameFolder and safeWait(GameFolder, "Functions")
+local Events = GameFolder and safeWait(GameFolder, "Events")
+
+-- Сами команды
+local PlaceTower = Functions and Functions:FindFirstChild("PlaceTower")
+local UpgradeTower = Functions and Functions:FindFirstChild("UpgradeTower")
+local RemoteReplay = Events and Events:FindFirstChild("Replay")
+
+if not (PlaceTower and UpgradeTower) then
+    print("❌ ОШИБКА: Не удалось найти Remote-события игры. Проверь консоль!")
+end
 
 local steps = {}
 local built = {}
@@ -14,102 +31,93 @@ local recording = false
 local playing = false
 local startTime = 0
 
---================ GUI ================--
+--================ GUI (БЕЗ ИЗМЕНЕНИЙ) ================--
 local ui = Instance.new("ScreenGui", lp.PlayerGui)
-ui.Name = "CursedMacro_V5_Fixed"
+ui.Name = "CursedMacro_V6"
 ui.ResetOnSpawn = false
 
 local main = Instance.new("Frame", ui)
 main.Size = UDim2.new(0, 200, 0, 250)
 main.Position = UDim2.new(0.1, 0, 0.5, -125)
-main.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+main.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 main.Active, main.Draggable = true, true
 Instance.new("UICorner", main)
 
-local function createBtn(name, text, pos, color)
+local function createBtn(text, pos, color)
     local b = Instance.new("TextButton", main)
-    b.Name = name
     b.Text = text
     b.Size = UDim2.new(1, -20, 0, 40)
     b.Position = pos
     b.BackgroundColor3 = color
     b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.GothamBold
     Instance.new("UICorner", b)
     return b
 end
 
-local recBtn = createBtn("Rec", "RECORD", UDim2.new(0, 10, 0, 10), Color3.fromRGB(150, 40, 40))
-local playBtn = createBtn("Play", "PLAY", UDim2.new(0, 10, 0, 60), Color3.fromRGB(40, 120, 40))
-local replayBtn = createBtn("Auto", "AUTO REPLAY: OFF", UDim2.new(0, 10, 0, 110), Color3.fromRGB(60, 60, 60))
+local recBtn = createBtn("RECORD", UDim2.new(0, 10, 0, 10), Color3.fromRGB(150, 40, 40))
+local playBtn = createBtn("PLAY", UDim2.new(0, 10, 0, 60), Color3.fromRGB(40, 120, 40))
+local replayBtn = createBtn("AUTO REPLAY: OFF", UDim2.new(0, 10, 0, 110), Color3.fromRGB(60, 60, 60))
 local status = Instance.new("TextLabel", main)
 status.Size = UDim2.new(1, 0, 0, 30)
 status.Position = UDim2.new(0, 0, 0, 210)
-status.Text = "Status: Idle"
-status.BackgroundTransparency = 1
+status.Text = "Status: Ready"
 status.TextColor3 = Color3.new(1,1,1)
+status.BackgroundTransparency = 1
 
 local autoReplay = false
 
---================ ЛОГИКА ЗАПИСИ ================--
+--================ СИСТЕМА ЗАПИСИ (HOOK) ================--
+-- Эта часть ловит твои действия в игре и записывает их
+local oldNamecall
+oldNamecall = hookmetatable(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
 
--- Хукаем установку башен
-PlaceTower.OnClientInvoke = function(name, pos, rotation)
     if recording then
-        table.insert(steps, {
-            time = tick() - startTime,
-            action = "place",
-            name = name,
-            pos = pos,
-            rot = rotation
-        })
-    end
-end
-
--- Хукаем апгрейды (важно запоминать индекс башни)
-UpgradeTower.OnClientInvoke = function(tower)
-    if recording then
-        local foundIndex = nil
-        for i, t in pairs(built) do
-            if t == tower then foundIndex = i break end
-        end
-
-        table.insert(steps, {
-            time = tick() - startTime,
-            action = "upgrade",
-            index = foundIndex or #built -- если индекс не найден, берем последний
-        })
-    end
-end
-
---================ ФИКС АПГРЕЙДОВ (ПОИСК НОВОЙ БАШНИ) ================--
-local function refreshTower(index, oldPos)
-    task.wait(0.3) -- Ждем, пока сервер создаст новую модельку после апгрейда
-    for _, v in pairs(game.Workspace.Towers:GetChildren()) do
-        if v:IsA("Model") and v.PrimaryPart and (v.PrimaryPart.Position - oldPos).Magnitude < 1 then
-            built[index] = v
-            return v
+        if self == PlaceTower and method == "InvokeServer" then
+            table.insert(steps, {
+                time = tick() - startTime,
+                action = "place",
+                name = args[1],
+                pos = args[2],
+                rot = args[3]
+            })
+        elseif self == UpgradeTower and method == "InvokeServer" then
+            -- Ищем, какую башню мы сейчас улучшаем в нашей таблице
+            local foundIndex = nil
+            for i, t in pairs(built) do
+                if t == args[1] then foundIndex = i break end
+            end
+            
+            table.insert(steps, {
+                time = tick() - startTime,
+                action = "upgrade",
+                index = foundIndex or 1
+            })
         end
     end
-    return nil
-end
+    return oldNamecall(self, ...)
+end)
 
---================ КНОПКИ ================--
+--================ ЛОГИКА КНОПОК ================--
+
 recBtn.MouseButton1Click:Connect(function()
     recording = not recording
     if recording then
         steps = {}
         built = {}
         startTime = tick()
-        recBtn.Text = "STOP RECORDING"
+        recBtn.Text = "STOP"
         status.Text = "Recording..."
     else
         recBtn.Text = "RECORD"
-        status.Text = "Saved: " .. #steps .. " actions"
+        status.Text = "Actions: " .. #steps
     end
 end)
 
 playBtn.MouseButton1Click:Connect(function()
-    if playing then return end
+    if playing or #steps == 0 then return end
     playing = true
     status.Text = "Playing..."
     built = {}
@@ -125,36 +133,35 @@ playBtn.MouseButton1Click:Connect(function()
                 local ok, tower = pcall(function() 
                     return PlaceTower:InvokeServer(step.name, step.pos, step.rot) 
                 end)
-                if ok and tower then
-                    table.insert(built, tower)
-                end
+                if ok and tower then table.insert(built, tower) end
 
             elseif step.action == "upgrade" then
                 local tower = built[step.index]
-                if tower and tower.Parent then
-                    local oldPos = tower.PrimaryPart.Position
+                if tower then
+                    local oldPos = tower.PrimaryPart and tower.PrimaryPart.Position
+                    local ok, newTower = pcall(function() return UpgradeTower:InvokeServer(tower) end)
                     
-                    -- САМ ФИКС: Пытаемся проапгрейдить и получить новый объект
-                    local ok, newTower = pcall(function()
-                        return UpgradeTower:InvokeServer(tower)
-                    end)
-
-                    -- Обновляем ссылку в таблице built, чтобы следующий апгрейд сработал
+                    -- Обновляем ссылку (Фикс 2-го уровня)
                     if ok and typeof(newTower) == "Instance" then
                         built[step.index] = newTower
-                    else
-                        -- Если сервер не вернул объект, ищем его по координатам
-                        refreshTower(step.index, oldPos)
+                    elseif oldPos then
+                        -- Если сервер не вернул объект, ищем по координатам
+                        task.wait(0.3)
+                        for _, v in pairs(game.Workspace.Towers:GetChildren()) do
+                            if v:IsA("Model") and v.PrimaryPart and (v.PrimaryPart.Position - oldPos).Magnitude < 1 then
+                                built[step.index] = v
+                                break
+                            end
+                        end
                     end
                 end
             end
-            
             stepIdx = stepIdx + 1
         end
         task.wait(0.05)
     end
     playing = false
-    status.Text = "Finished Play"
+    status.Text = "Done"
 end)
 
 replayBtn.MouseButton1Click:Connect(function()
@@ -163,11 +170,14 @@ replayBtn.MouseButton1Click:Connect(function()
     replayBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(60, 60, 60)
 end)
 
--- Авто-повтор в конце катки
+-- Авто-повтор
 task.spawn(function()
     while task.wait(5) do
-        if autoReplay and lp.PlayerGui:FindFirstChild("VictoryGui") or lp.PlayerGui:FindFirstChild("DefeatGui") then
-            RemoteReplay:FireServer()
+        if autoReplay then
+            local gui = lp.PlayerGui:FindFirstChild("VictoryGui") or lp.PlayerGui:FindFirstChild("DefeatGui")
+            if gui and gui.Enabled and RemoteReplay then
+                RemoteReplay:FireServer()
+            end
         end
     end
 end)

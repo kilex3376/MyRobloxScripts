@@ -6,16 +6,22 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local TeleportService = game:GetService("TeleportService")
 
 local lp = Players.LocalPlayer
-local SpawnTower, UpgradeTower, SkipRemote, AutoSkipRemote
+local SpawnTower, UpgradeTower, SkipWave, AutoSkip
 
--- ОБНОВЛЕННЫЙ ПОИСК (с учетом твоего кода)
-for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
-    local n = v.Name
-    if n == "SpawnNewTower" or n == "PlaceTower" then SpawnTower = v
-    elseif n == "UpgradeTower" then UpgradeTower = v
-    elseif n == "SkipWave" or n == "VoteSkip" or n == "Skip" then SkipRemote = v 
-    elseif n == "AutoSkip" or n == "ToggleAutoSkip" then AutoSkipRemote = v end
-end
+-- ПОИСК REMOTES (из твоего рабочего кода)
+task.spawn(function()
+    for _,v in ipairs(ReplicatedStorage:GetDescendants()) do
+        if v.Name == "SpawnNewTower" or v.Name == "PlaceTower" then
+            SpawnTower = v
+        elseif v.Name == "UpgradeTower" then
+            UpgradeTower = v
+        elseif v.Name == "SkipWave" or v.Name == "VoteSkip" or v.Name == "Skip" then
+            SkipWave = v
+        elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then
+            AutoSkip = v
+        end
+    end
+end)
 
 local SLOTS = 3
 local currentSlot = 1
@@ -25,26 +31,20 @@ local placed = {}
 local startTime = 0
 local autoReplay, autoPlay = false, false
 
-local SETTINGS_FILE = "macro_settings_v13.json"
+-- Переменные для защиты спавна (из твоего кода)
+local lastSpawnTime = 0
+local lastSpawnPos
+
+local SETTINGS_FILE = "macro_settings_v14.json"
 
 local function saveSettings()
-    if writefile then
-        writefile(SETTINGS_FILE, HttpService:JSONEncode({
-            autoReplay = autoReplay,
-            autoPlay = autoPlay,
-            slot = currentSlot
-        }))
-    end
+    if writefile then writefile(SETTINGS_FILE, HttpService:JSONEncode({autoReplay = autoReplay, autoPlay = autoPlay, slot = currentSlot})) end
 end
 
 local function loadSettings()
     if isfile and isfile(SETTINGS_FILE) then
         local ok, data = pcall(function() return HttpService:JSONDecode(readfile(SETTINGS_FILE)) end)
-        if ok and data then
-            autoReplay = data.autoReplay or false
-            autoPlay = data.autoPlay or false
-            currentSlot = data.slot or 1
-        end
+        if ok and data then autoReplay = data.autoReplay or false autoPlay = data.autoPlay or false currentSlot = data.slot or 1 end
     end
 end
 
@@ -59,9 +59,9 @@ local function forceClick(btn)
     end)
 end
 
--- GUI (БЕЗ ИЗМЕНЕНИЙ СТИЛЯ)
+--================ НАШЕ GUI ================--
 local ui = Instance.new("ScreenGui", lp.PlayerGui)
-ui.Name = "Macro_V13_SkipFixed"
+ui.Name = "Macro_V14_Final"
 ui.ResetOnSpawn = false
 
 local main = Instance.new("Frame", ui)
@@ -97,14 +97,17 @@ local function updateUI()
     recBtn.BackgroundColor3 = recording and Color3.fromRGB(150, 30, 30) or Color3.fromRGB(80, 35, 35)
 end
 
--- ЛОГИКА КНОПОК
+--================ КНОПКИ ================--
 slotBtn.MouseButton1Click:Connect(function()
     if not recording then currentSlot = (currentSlot % SLOTS) + 1 saveSettings() updateUI() end
 end)
 
 recBtn.MouseButton1Click:Connect(function()
     if not recording then
-        allMacros[currentSlot], placed, startTime, recording = {}, {}, os.clock(), true
+        -- Очищаем данные (из твоего кода)
+        allMacros[currentSlot], placed = {}, {}
+        lastSpawnTime, lastSpawnPos = 0, nil
+        startTime, recording = os.clock(), true
     else
         recording = false
         if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
@@ -121,7 +124,7 @@ end)
 arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay saveSettings() updateUI() end)
 apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay saveSettings() updateUI() end)
 
--- ЗАПИСЬ
+-- ЗАПИСЬ ПЛЕЙ АГЕЙН (Наша фича)
 RunService.Heartbeat:Connect(function()
     if recording then
         local replay = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true)
@@ -139,59 +142,88 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ХУКИ
+--================ ХУКИ (Точно из твоего рабочего кода) ================--
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
     local args = {...}
-    if recording and not checkcaller() then
-        if self == SpawnTower then
-            local res = old(self, ...)
-            table.insert(allMacros[currentSlot], {action="spawn", id=args[1], x=args[2].X, y=args[2].Y, z=args[2].Z, index=#placed+1, t=os.clock()-startTime})
-            table.insert(placed, res or "dummy")
-            return res
-        elseif self == UpgradeTower then
-            for i, v in pairs(placed) do
-                if v == args[1] then table.insert(allMacros[currentSlot], {action="upgrade", index=i, t=os.clock()-startTime}) break end
+    local method = getnamecallmethod()
+
+    if not checkcaller() and recording then
+        if self == SpawnTower and method == "InvokeServer" then
+            local cf = args[2]
+            if typeof(cf) == "CFrame" then
+                local pos = cf.Position
+                if tick() - lastSpawnTime > 0.35 or not lastSpawnPos or (lastSpawnPos - pos).Magnitude > 1 then
+                    lastSpawnTime = tick()
+                    lastSpawnPos = pos
+
+                    local result = old(self, ...)
+                    local index = #placed + 1
+                    placed[index] = result
+
+                    table.insert(allMacros[currentSlot], {
+                        action = "spawn", index = index, id = tostring(args[1]),
+                        x = pos.X, y = pos.Y, z = pos.Z, t = os.clock() - startTime
+                    })
+                    return result
+                end
             end
-        elseif self == SkipRemote or self == AutoSkipRemote then
-            table.insert(allMacros[currentSlot], {action="skip", t=os.clock()-startTime})
+        elseif self == UpgradeTower and method == "InvokeServer" then
+            local tower = args[1]
+            for i = #placed, 1, -1 do
+                if placed[i] == tower then
+                    table.insert(allMacros[currentSlot], {action = "upgrade", index = i, t = os.clock() - startTime})
+                    break
+                end
+            end
+        elseif SkipWave and self == SkipWave and (method == "InvokeServer" or method == "FireServer") then
+            table.insert(allMacros[currentSlot], {action = "skip", t = os.clock() - startTime})
+        elseif AutoSkip and self == AutoSkip and (method == "InvokeServer" or method == "FireServer") then
+            table.insert(allMacros[currentSlot], {action = "autoskip", value = args[1], t = os.clock() - startTime})
         end
     end
     return old(self, ...)
 end)
 
--- PLAY
+--================ ПЛЕЕР (Точно из твоего рабочего кода + наш Play Again) ================--
 local function doPlay()
     if playing or #allMacros[currentSlot] == 0 then return end
     playing = true
+    
     task.spawn(function()
-        local currentPlaced = {}
-        local playStartTime = os.clock()
+        local built = {}
+        local begin = os.clock()
+
         for _, step in ipairs(allMacros[currentSlot]) do
             if not playing then break end
-            while os.clock() < playStartTime + step.t do RunService.Heartbeat:Wait() end
-            pcall(function()
-                if step.action == "spawn" then
-                    local ok, obj = SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z))
-                    currentPlaced[step.index] = obj
-                elseif step.action == "upgrade" and currentPlaced[step.index] then
-                    UpgradeTower:InvokeServer(currentPlaced[step.index])
-                elseif step.action == "skip" then
-                    -- Пробуем оба варианта скипа
-                    if SkipRemote then if SkipRemote:IsA("RemoteEvent") then SkipRemote:FireServer() else SkipRemote:InvokeServer() end end
-                    if AutoSkipRemote then if AutoSkipRemote:IsA("RemoteEvent") then AutoSkipRemote:FireServer() else AutoSkipRemote:InvokeServer() end end
-                elseif step.action == "rejoin" then
-                    local rb = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true)
-                    forceClick(rb)
-                end
-            end)
+            while os.clock() < begin + step.t do RunService.Heartbeat:Wait() end
+
+            if step.action == "spawn" then
+                local ok, tower = pcall(function() return SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z)) end)
+                if ok then built[step.index] = tower end
+                task.wait(0.05)
+            elseif step.action == "upgrade" then
+                if built[step.index] then pcall(function() UpgradeTower:InvokeServer(built[step.index]) end) end
+                task.wait(0.1)
+            elseif step.action == "skip" then
+                pcall(function() if SkipWave then if SkipWave:IsA("RemoteFunction") then SkipWave:InvokeServer() else SkipWave:FireServer() end end end)
+            elseif step.action == "autoskip" then
+                pcall(function() if AutoSkip then if AutoSkip:IsA("RemoteFunction") then AutoSkip:InvokeServer(step.value) else AutoSkip:FireServer(step.value) end end end)
+            elseif step.action == "rejoin" then
+                local rb = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true)
+                forceClick(rb)
+            end
         end
         playing = false
     end)
 end
 
 playBtn.MouseButton1Click:Connect(doPlay)
+
+-- ЗАГРУЗКА
 loadSettings()
 for i=1, SLOTS do pcall(function() if isfile and isfile("macro_s"..i..".json") then allMacros[i] = HttpService:JSONDecode(readfile("macro_s"..i..".json")) end end) end
 updateUI()
-if autoPlay then task.delay(6, doPlay) end
+
+-- АВТО-ПЛЕЙ ПРИ ЗАХОДЕ
+if autoPlay then task.delay(5, doPlay) end
+

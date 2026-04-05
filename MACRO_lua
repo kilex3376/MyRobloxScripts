@@ -1,456 +1,278 @@
-local HttpService = game:GetService("HttpService") local RunService = game:GetService("RunService") local ReplicatedStorage = game:GetService("ReplicatedStorage") local Players = game:GetService("Players") local VirtualInputManager = game:GetService("VirtualInputManager") local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TeleportService = game:GetService("TeleportService")
 
-local lp = Players.LocalPlayer local SpawnTower, UpgradeTower, MoneyValue, SkipWaveRemote, AutoSkipRemote
+local lp = Players.LocalPlayer
+local SpawnTower, UpgradeTower, MoneyValue, SkipWaveRemote, AutoSkipRemote
 
-for _, v in ipairs(ReplicatedStorage:GetDescendants()) do if v.Name == "SpawnNewTower" then SpawnTower = v elseif v.Name == "UpgradeTower" then UpgradeTower = v elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then SkipWaveRemote = v elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then AutoSkipRemote = v end end
-
-task.spawn(function() while not SpawnTower or not UpgradeTower do for _, v in ipairs(ReplicatedStorage:GetDescendants()) do if v.Name == "SpawnNewTower" then SpawnTower = v elseif v.Name == "UpgradeTower" then UpgradeTower = v elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then SkipWaveRemote = v elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then AutoSkipRemote = v end end
-
-pcall(function()
-        MoneyValue = lp.PlayerGui.HUD.Main.Top.Cash
-    end)
-
-    task.wait(1)
-end
-
-end)
-
-local SLOTS = 3 local currentSlot = 1 local allMacros = {{}, {}, {}} local recording = false local playing = false local placed = {} local startTime = 0 local lastSpawnTime = 0 local autoReplay = false local autoPlay = false local hooked = false
-
-local FLAG_FILE = "macro_autoreplay_v2.json" local AUTOPLAY_FILE = "macro_autoplay.json"
-
-local function setReplayFlag(slot) if writefile then pcall(function() writefile(FLAG_FILE, HttpService:JSONEncode({slot = slot})) end) end end
-
-local function clearReplayFlag() if writefile then pcall(function() writefile(FLAG_FILE, "{}") end) end end
-
-local function getReplayFlag() if isfile and isfile(FLAG_FILE) then local ok, data = pcall(function() return HttpService:JSONDecode(readfile(FLAG_FILE)) end)
-
-if ok and data and data.slot then
-        return data.slot
+-- Функция поиска ремоутов
+local function findRemotes()
+    for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
+        if v.Name == "SpawnNewTower" then SpawnTower = v
+        elseif v.Name == "UpgradeTower" then UpgradeTower = v
+        elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then SkipWaveRemote = v
+        elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then AutoSkipRemote = v end
     end
 end
-
-end
-
-local ui = Instance.new("ScreenGui") ui.Name = "MacroUI_Fixed" ui.ResetOnSpawn = false ui.Parent = lp.PlayerGui
-
-local function createPanel(name, pos, size) local f = Instance.new("Frame") f.Name = name f.Parent = ui f.Size = size f.Position = pos f.BackgroundColor3 = Color3.fromRGB(25, 25, 25) f.BorderSizePixel = 0 f.Active = true f.Draggable = true local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 8) c.Parent = f return f end
-
-local mainPanel = createPanel("Main", UDim2.new(0, 20, 0.5, -120), UDim2.new(0, 175, 0, 180)) local settingsPanel = createPanel("Settings", UDim2.new(0, 205, 0.5, -120), UDim2.new(0, 185, 0, 150))
-
-local function addTitle(parent, text) local t = Instance.new("TextLabel") t.Parent = parent t.Size = UDim2.new(1, 0, 0, 25) t.BackgroundTransparency = 1 t.Text = text t.TextColor3 = Color3.new(1, 1, 1) t.Font = Enum.Font.GothamBold t.TextSize = 12 return t end
-
-addTitle(mainPanel, "MACRO") addTitle(settingsPanel, "AUTO / SETTINGS")
-
-local statusLbl = Instance.new("TextLabel") statusLbl.Parent = mainPanel statusLbl.Size = UDim2.new(1, 0, 0, 20) statusLbl.Position = UDim2.new(0, 0, 1, -22) statusLbl.BackgroundTransparency = 1 statusLbl.TextColor3 = Color3.fromRGB(180, 180, 180) statusLbl.Font = Enum.Font.GothamMedium statusLbl.TextSize = 11 statusLbl.Text = "Slot 1 Selected"
-
-local function createBtn(parent, txt, pos, size, color) local b = Instance.new("TextButton") b.Parent = parent b.Size = size b.Position = pos b.Text = txt b.BackgroundColor3 = color or Color3.fromRGB(40, 40, 40) b.TextColor3 = Color3.new(1,1,1) b.Font = Enum.Font.GothamBold b.TextSize = 11 b.BorderSizePixel = 0 local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0, 6) c.Parent = b return b end
-
-local slotBtns = {} for i = 1, SLOTS do slotBtns[i] = createBtn(mainPanel, "S"..i.." (0)", UDim2.new(0, 8 + (i - 1) * 54, 0, 30), UDim2.new(0, 48, 0, 25)) end
-
-local recBtn = createBtn(mainPanel, "RECORD", UDim2.new(0, 10, 0, 65), UDim2.new(1, -20, 0, 28)) local stopBtn = createBtn(mainPanel, "STOP RECORD", UDim2.new(0, 10, 0, 98), UDim2.new(1, -20, 0, 28)) local playBtn = createBtn(mainPanel, "PLAY", UDim2.new(0, 10, 0, 131), UDim2.new(1, -20, 0, 28)) local arBtn = createBtn(settingsPanel, "AUTO REPLAY: OFF", UDim2.new(0, 10, 0, 30), UDim2.new(1, -20, 0, 28)) local apBtn = createBtn(settingsPanel, "AUTO PLAY: OFF", UDim2.new(0, 10, 0, 63), UDim2.new(1, -20, 0, 28)) local delBtn = createBtn(settingsPanel, "DELETE MACRO", UDim2.new(0, 10, 0, 96), UDim2.new(1, -20, 0, 22), Color3.fromRGB(120,35,35)) local stopAutoBtn = createBtn(settingsPanel, "STOP ALL", UDim2.new(0, 10, 0, 122), UDim2.new(1, -20, 0, 22), Color3.fromRGB(70,70,70))
-
-local function updateUI() for i = 1, SLOTS do slotBtns[i].BackgroundColor3 = i == currentSlot and Color3.fromRGB(80, 70, 180) or Color3.fromRGB(40, 40, 40) slotBtns[i].Text = "S" .. i .. " (" .. #allMacros[i] .. ")" end
-
-if not recording and not playing then
-    statusLbl.Text = "Slot " .. currentSlot .. " Selected"
-end
-
-end
-
-for i = 1, SLOTS do slotBtns[i].MouseButton1Click:Connect(function() if recording or playing then return end
-
-currentSlot = i
-    updateUI()
-end)
-
-end
-
-local function clickReplayButton(button) pcall(function() button:Activate() end)
-
-pcall(function()
-    if firesignal then
-        firesignal(button.MouseButton1Click)
-        firesignal(button.Activated)
-    end
-end)
-
-local pos = button.AbsolutePosition
-local size = button.AbsoluteSize
-
-VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, true, game, 1)
-task.wait(0.05)
-VirtualInputManager:SendMouseButtonEvent(pos.X + size.X / 2, pos.Y + size.Y / 2, 0, false, game, 1)
-
-end
-
-local function startPlay() if playing or #allMacros[currentSlot] == 0 then return end
-
-playing = true
-statusLbl.Text = "PLAYING..."
 
 task.spawn(function()
-    local built = {}
-    local begin = os.clock()
-
-    pcall(function()
-        if AutoSkipRemote then
-            AutoSkipRemote:FireServer(true)
-        end
-    end)
-
-    for _, step in ipairs(allMacros[currentSlot]) do
-        if not playing then
-            break
-        end
-
-        while os.clock() < begin + step.t do
-            RunService.Heartbeat:Wait()
-        end
-
-        pcall(function()
-            if step.action == "spawn" then
-                local ok, tower = SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z))
-                if ok and tower then
-                    built[step.index] = tower
-                end
-            elseif step.action == "upgrade" then
-                if built[step.index] then
-                    local ok, newTower = UpgradeTower:InvokeServer(built[step.index])
-                    if ok and typeof(newTower) == "Instance" then
-                        built[step.index] = newTower
-                    end
-                end
-            elseif step.action == "delete" then
-                if built[step.index] then
-                    for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
-                        if remote.Name == "SellTower" or remote.Name == "DeleteTower" then
-                            pcall(function()
-                                remote:InvokeServer(built[step.index])
-                            end)
-                            break
-                        end
-                    end
-                    built[step.index] = nil
-                end
-            elseif step.action == "skip" then
-                if SkipWaveRemote then
-                    pcall(function()
-                        SkipWaveRemote:FireServer()
-                    end)
-                    pcall(function()
-                        SkipWaveRemote:InvokeServer()
-                    end)
-                end
-            end
-        end)
-    end
-
-    statusLbl.Text = "WAITING END..."
-
-    while playing do
-        local gameGui = lp.PlayerGui:FindFirstChild("GameGui")
-        local endScreen = gameGui and gameGui:FindFirstChild("EndScreen")
-        local replay = endScreen and endScreen:FindFirstChild("Replay")
-        local title = endScreen and (endScreen:FindFirstChild("Title") or endScreen:FindFirstChild("Result") or endScreen:FindFirstChild("Status"))
-
-        if replay and replay.Visible then
-            local visibleFor = 0
-
-            while replay and replay.Parent and replay.Visible and visibleFor < 3 do
-                task.wait(0.25)
-                visibleFor += 0.25
-            end
-
-            if autoReplay and replay and replay.Parent and replay.Visible then
-                statusLbl.Text = "REPLAYING"
-                setReplayFlag(currentSlot)
-                clickReplayButton(replay)
-            else
-                clearReplayFlag()
-                statusLbl.Text = "MATCH FINISHED"
-            end
-
-            break
-                    elseif txt:find("defeat") or txt:find("lose") or txt:find("failed") then
-                        won = false
-                        break
-                    end
-                end
-
-                task.wait(0.25)
-            end
-
-            if autoReplay and won then
-                statusLbl.Text = "VICTORY - WAITING REPLAY"
-                task.wait(2)
-
-                if replay.Parent and replay.Visible then
-                    setReplayFlag(currentSlot)
-                    clickReplayButton(replay)
-                    statusLbl.Text = "REPLAYING"
-                end
-            else
-                clearReplayFlag()
-                statusLbl.Text = won and "VICTORY" or "DEFEAT"
-            end
-
-            break
-        end
-
-        task.wait(0.25)
-    end
-
-    playing = false
-    updateUI()
-
-    if autoPlay and not autoReplay then
+    while not SpawnTower do
+        findRemotes()
+        pcall(function() MoneyValue = lp.PlayerGui.HUD.Main.Top.Cash end)
         task.wait(1)
-        startPlay()
     end
 end)
 
+local SLOTS = 3
+local currentSlot = 1
+local allMacros = {{}, {}, {}}
+local recording, playing = false, false
+local placed = {}
+local startTime, lastSpawnTime = 0, 0
+local autoReplay, autoPlay = false, false
+
+local FLAG_FILE = "macro_autoreplay_v2.json"
+local AUTOPLAY_FILE = "macro_autoplay.json"
+
+local function setReplayFlag(s) if writefile then writefile(FLAG_FILE, HttpService:JSONEncode({slot = s})) end end
+local function clearReplayFlag() if writefile then writefile(FLAG_FILE, "{}") end end
+local function getReplayFlag()
+    if isfile and isfile(FLAG_FILE) then
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(FLAG_FILE)) end)
+        return (ok and data and data.slot) and data.slot or nil
+    end
+    return nil
 end
 
-if not hooked then hooked = true
+--================ GUI (ДВЕ ПАНЕЛИ) ================--
+local ui = Instance.new("ScreenGui", lp.PlayerGui)
+ui.Name = "MacroUI_Fixed_V2"
+ui.ResetOnSpawn = false
 
-local old
-old = hookmetamethod(game, "__namecall", function(self, ...)
-    local args = {...}
-    local method = getnamecallmethod()
+local function createPanel(name, pos, size)
+    local f = Instance.new("Frame", ui)
+    f.Name = name
+    f.Size, f.Position = size, pos
+    f.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    f.BorderSizePixel = 0
+    f.Active, f.Draggable = true, true
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+    return f
+end
 
-    if not checkcaller() and recording and method == "InvokeServer" then
+local mainPanel = createPanel("Main", UDim2.new(0, 20, 0.5, -120), UDim2.new(0, 175, 0, 185))
+local setPanel = createPanel("Settings", UDim2.new(0, 205, 0.5, -120), UDim2.new(0, 185, 0, 155))
+
+local function addTitle(p, txt)
+    local t = Instance.new("TextLabel", p)
+    t.Size = UDim2.new(1, 0, 0, 25)
+    t.BackgroundTransparency = 1
+    t.Text, t.TextColor3 = txt, Color3.new(1, 1, 1)
+    t.Font, t.TextSize = Enum.Font.GothamBold, 12
+end
+
+addTitle(mainPanel, "MACRO")
+addTitle(setPanel, "AUTO / SETTINGS")
+
+local statusLbl = Instance.new("TextLabel", mainPanel)
+statusLbl.Size, statusLbl.Position = UDim2.new(1, 0, 0, 20), UDim2.new(0, 0, 1, -22)
+statusLbl.BackgroundTransparency, statusLbl.TextColor3 = 1, Color3.fromRGB(180, 180, 180)
+statusLbl.Font, statusLbl.TextSize = Enum.Font.GothamMedium, 10
+statusLbl.Text = "Ready"
+
+local function btn(p, txt, pos, size, color)
+    local b = Instance.new("TextButton", p)
+    b.Size, b.Position, b.Text = size, pos, txt
+    b.BackgroundColor3 = color or Color3.fromRGB(40, 40, 40)
+    b.TextColor3, b.Font, b.TextSize = Color3.new(1,1,1), Enum.Font.GothamBold, 11
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    return b
+end
+
+local slotBtns = {}
+for i = 1, SLOTS do
+    slotBtns[i] = btn(mainPanel, "S"..i, UDim2.new(0, 8 + (i-1)*54, 0, 30), UDim2.new(0, 48, 0, 25))
+end
+
+local recBtn = btn(mainPanel, "RECORD", UDim2.new(0, 10, 0, 65), UDim2.new(1, -20, 0, 28))
+local stopBtn = btn(mainPanel, "STOP RECORD", UDim2.new(0, 10, 0, 98), UDim2.new(1, -20, 0, 28))
+local playBtn = btn(mainPanel, "PLAY", UDim2.new(0, 10, 0, 131), UDim2.new(1, -20, 0, 28))
+
+local arBtn = btn(setPanel, "AUTO REPLAY: OFF", UDim2.new(0, 10, 0, 30), UDim2.new(1, -20, 0, 28))
+local apBtn = btn(setPanel, "AUTO PLAY: OFF", UDim2.new(0, 10, 0, 63), UDim2.new(1, -20, 0, 28))
+local delBtn = btn(setPanel, "DELETE MACRO", UDim2.new(0, 10, 0, 96), UDim2.new(1, -20, 0, 22), Color3.fromRGB(120, 35, 35))
+local stopAutoBtn = btn(setPanel, "STOP ALL", UDim2.new(0, 10, 0, 125), UDim2.new(1, -20, 0, 22), Color3.fromRGB(70, 70, 70))
+
+local function updateUI()
+    for i = 1, SLOTS do
+        slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(80, 70, 180) or Color3.fromRGB(40, 40, 40)
+        slotBtns[i].Text = "S"..i.." ("..#allMacros[i]..")"
+    end
+end
+
+for i = 1, SLOTS do
+    slotBtns[i].MouseButton1Click:Connect(function()
+        if not recording and not playing then currentSlot = i updateUI() end
+    end)
+end
+
+--================ ЛОГИКА PLAY ================--
+local function startPlay()
+    if playing or #allMacros[currentSlot] == 0 then return end
+    playing = true
+    statusLbl.Text = "PLAYING SLOT "..currentSlot
+    
+    task.spawn(function()
+        local built = {}
+        local startT = os.clock()
+        
+        for _, step in ipairs(allMacros[currentSlot]) do
+            if not playing then break end
+            while os.clock() < startT + step.t do RunService.Heartbeat:Wait() end
+            
+            pcall(function()
+                if step.action == "spawn" then
+                    local ok, t = SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z))
+                    if ok and t then built[step.index] = t end
+                elseif step.action == "upgrade" and built[step.index] then
+                    local ok, nt = UpgradeTower:InvokeServer(built[step.index])
+                    if ok and typeof(nt) == "Instance" then built[step.index] = nt end
+                elseif step.action == "delete" and built[step.index] then
+                    for _, r in ipairs(ReplicatedStorage:GetDescendants()) do
+                        if r.Name == "SellTower" or r.Name == "DeleteTower" then r:InvokeServer(built[step.index]) break end
+                    end
+                end
+            end)
+        end
+        
+        statusLbl.Text = "WAITING END..."
+        while playing do
+            local replay = lp.PlayerGui:FindFirstChild("GameGui") and lp.PlayerGui.GameGui:FindFirstChild("EndScreen") and lp.PlayerGui.GameGui.EndScreen:FindFirstChild("Replay")
+            if replay and replay.Visible then
+                if autoReplay then
+                    setReplayFlag(currentSlot)
+                    task.wait(2)
+                    TeleportService:Teleport(game.PlaceId, lp)
+                end
+                break
+            end
+            task.wait(1)
+        end
+        playing = false
+        updateUI()
+    end)
+end
+
+--================ ХУК ЗАПИСИ ================--
+local old; old = hookmetamethod(game, "__namecall", function(self, ...)
+    local method, args = getnamecallmethod(), {...}
+    if recording and not checkcaller() and method == "InvokeServer" then
         if self == SpawnTower then
-            if os.clock() - lastSpawnTime < 0.15 then
-                return old(self, ...)
-            end
-
+            if os.clock() - lastSpawnTime < 0.2 then return old(self, ...) end
             lastSpawnTime = os.clock()
-            local result = old(self, ...)
-
-            local tower = result
-            if typeof(result) == "table" then
-                tower = result[2] or result[1]
+            local res = old(self, ...)
+            if res then
+                local idx = #placed + 1
+                placed[idx] = res
+                table.insert(allMacros[currentSlot], {action = "spawn", id = args[1], x = args[2].X, y = args[2].Y, z = args[2].Z, index = idx, t = os.clock() - startTime})
             end
-
-            if tower and typeof(tower) == "Instance" then
-                local index = #placed + 1
-                placed[index] = tower
-
-                table.insert(allMacros[currentSlot], {
-                    action = "spawn",
-                    id = args[1],
-                    x = args[2].Position.X,
-                    y = args[2].Position.Y,
-                    z = args[2].Position.Z,
-                    index = index,
-                    t = os.clock() - startTime
-                })
-            end
-
-            return result
+            return res
         elseif self == UpgradeTower then
-            for index, tower in pairs(placed) do
-                if tower == args[1] then
-                    table.insert(allMacros[currentSlot], {
-                        action = "upgrade",
-                        index = index,
-                        t = os.clock() - startTime
-                    })
+            for i, v in pairs(placed) do
+                if v == args[1] then
+                    table.insert(allMacros[currentSlot], {action = "upgrade", index = i, t = os.clock() - startTime})
                     break
                 end
             end
-        elseif self.Name == "SellTower" or self.Name == "DeleteTower" then
-            for index, tower in pairs(placed) do
-                if tower == args[1] then
-                    table.insert(allMacros[currentSlot], {
-                        action = "delete",
-                        index = index,
-                        t = os.clock() - startTime
-                    })
-                    placed[index] = nil
-                    break
-                end
-            end
-        elseif self == SkipWaveRemote then
-            table.insert(allMacros[currentSlot], {
-                action = "skip",
-                t = os.clock() - startTime
-            })
         end
     end
-
     return old(self, ...)
 end)
 
-end
-
-recBtn.MouseButton1Click:Connect(function() if playing then return end
-
-recording = true
-placed = {}
-allMacros[currentSlot] = {}
-startTime = os.clock()
-statusLbl.Text = "RECORDING..."
-
-task.spawn(function()
-    local alreadyDeleted = {}
-
-    while recording do
-        for index, tower in pairs(placed) do
-            if tower and not alreadyDeleted[index] then
-                local removed = false
-
-                if tower.Parent == nil then
-                    removed = true
-                else
-                    pcall(function()
-                        if tower:GetAttribute("Sold") == true or tower:GetAttribute("Deleted") == true then
-                            removed = true
-                        end
-                    end)
-                end
-
-                if removed then
-                    alreadyDeleted[index] = true
-                    table.insert(allMacros[currentSlot], {
-                        action = "delete",
-                        index = index,
-                        t = os.clock() - startTime
-                    })
-                    placed[index] = nil
+recBtn.MouseButton1Click:Connect(function()
+    if playing then return end
+    allMacros[currentSlot], placed, startTime, recording = {}, {}, os.clock(), true
+    statusLbl.Text = "RECORDING..."
+    task.spawn(function()
+        while recording do
+            task.wait(0.3)
+            for i, v in pairs(placed) do
+                if v and v.Parent == nil then
+                    table.insert(allMacros[currentSlot], {action = "delete", index = i, t = os.clock() - startTime})
+                    placed[i] = nil
                 end
             end
         end
-
-        task.wait(0.1)
-    end
-end)
-
-end)
-
-stopBtn.MouseButton1Click:Connect(function() if not recording then return end
-
-recording = false
-
-if writefile then
-    pcall(function()
-        writefile("macro_s" .. currentSlot .. ".json", HttpService:JSONEncode(allMacros[currentSlot]))
     end)
-end
+end)
 
-statusLbl.Text = "SAVED"
-task.wait(0.8)
-updateUI()
-
+stopBtn.MouseButton1Click:Connect(function()
+    recording = false
+    statusLbl.Text = "SAVED"
+    if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
+    task.wait(0.5)
+    updateUI()
 end)
 
 playBtn.MouseButton1Click:Connect(startPlay)
 
-arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay arBtn.Text = "AUTO REPLAY: " .. (autoReplay and "ON" or "OFF") arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(30,140,30) or Color3.fromRGB(40,40,40)
+arBtn.MouseButton1Click:Connect(function()
+    autoReplay = not autoReplay
+    arBtn.Text = "AUTO REPLAY: " .. (autoReplay and "ON" or "OFF")
+    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(30,140,30) or Color3.fromRGB(40,40,40)
+    if not autoReplay then clearReplayFlag() end
+end)
 
-if not autoReplay then
+apBtn.MouseButton1Click:Connect(function()
+    autoPlay = not autoPlay
+    apBtn.Text = "AUTO PLAY: " .. (autoPlay and "ON" or "OFF")
+    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30,140,30) or Color3.fromRGB(40,40,40)
+    if writefile then writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = autoPlay})) end
+    if autoPlay and not playing then startPlay() end
+end)
+
+delBtn.MouseButton1Click:Connect(function()
+    allMacros[currentSlot] = {}
+    if writefile then pcall(function() delfile("macro_s"..currentSlot..".json") end) end
+    updateUI()
+    statusLbl.Text = "DELETED SLOT "..currentSlot
+end)
+
+stopAutoBtn.MouseButton1Click:Connect(function()
+    playing, recording, autoReplay, autoPlay = false, false, false, false
     clearReplayFlag()
-end
-
+    arBtn.Text, arBtn.BackgroundColor3 = "AUTO REPLAY: OFF", Color3.fromRGB(40,40,40)
+    apBtn.Text, apBtn.BackgroundColor3 = "AUTO PLAY: OFF", Color3.fromRGB(40,40,40)
+    statusLbl.Text = "STOPPED ALL"
 end)
 
-apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay apBtn.Text = "AUTO PLAY: " .. (autoPlay and "ON" or "OFF") apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30,140,30) or Color3.fromRGB(40,40,40)
-
-if writefile then
-    pcall(function()
-        writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = autoPlay}))
-    end)
-end
-
-if autoPlay and not playing then
-    task.spawn(function()
-        task.wait(1)
-        startPlay()
-    end)
-end
-
-end)
-
-delBtn.MouseButton1Click:Connect(function() playing = false recording = false
-
-allMacros[currentSlot] = {}
-placed = {}
-
-if writefile then
-    pcall(function()
-        writefile("macro_s" .. currentSlot .. ".json", "[]")
-    end)
-
-    pcall(function()
-        if isfile and isfile("macro_s" .. currentSlot .. ".json") then
-            delfile("macro_s" .. currentSlot .. ".json")
+--================ СТАРТ ================--
+task.spawn(function()
+    for i = 1, SLOTS do
+        if isfile and isfile("macro_s"..i..".json") then
+            pcall(function() allMacros[i] = HttpService:JSONDecode(readfile("macro_s"..i..".json")) end)
         end
-    end)
-end
-
-allMacros[currentSlot] = {}
-
-updateUI()
-statusLbl.Text = "DELETED SLOT " .. currentSlot
-
-end)
-
-stopAutoBtn.MouseButton1Click:Connect(function() playing = false recording = false autoReplay = false autoPlay = false
-
-clearReplayFlag()
-
-arBtn.Text = "AUTO REPLAY: OFF"
-arBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-
-apBtn.Text = "AUTO PLAY: OFF"
-apBtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-
-if writefile then
-    pcall(function()
-        writefile(AUTOPLAY_FILE, HttpService:JSONEncode({enabled = false}))
-    end)
-end
-
-statusLbl.Text = "STOPPED"
-task.wait(0.8)
-updateUI()
-
-end)
-
-task.spawn(function() for i = 1, SLOTS do if isfile and isfile("macro_s" .. i .. ".json") then pcall(function() allMacros[i] = HttpService:JSONDecode(readfile("macro_s" .. i .. ".json")) end) end end
-
-if isfile and isfile(AUTOPLAY_FILE) then
-    local ok, data = pcall(function()
-        return HttpService:JSONDecode(readfile(AUTOPLAY_FILE))
-    end)
-
-    if ok and data and data.enabled then
-        autoPlay = true
-        apBtn.Text = "AUTO PLAY: ON"
-        apBtn.BackgroundColor3 = Color3.fromRGB(30,140,30)
     end
-end
-
-local replaySlot = getReplayFlag()
-if replaySlot then
-    currentSlot = replaySlot
-    autoReplay = true
-
-    arBtn.Text = "AUTO REPLAY: ON"
-    arBtn.BackgroundColor3 = Color3.fromRGB(30,140,30)
-
+    if isfile and isfile(AUTOPLAY_FILE) then
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(AUTOPLAY_FILE)) end)
+        if ok and data.enabled then
+            autoPlay = true
+            apBtn.Text, apBtn.BackgroundColor3 = "AUTO PLAY: ON", Color3.fromRGB(30,140,30)
+        end
+    end
     updateUI()
-
-    task.wait(2)
-    startPlay()
-else
-    updateUI()
-
-    if autoPlay then
-        task.wait(2)
+    local s = getReplayFlag()
+    if s then
+        currentSlot = s
+        autoReplay = true
+        arBtn.Text, arBtn.BackgroundColor3 = "AUTO REPLAY: ON", Color3.fromRGB(30,140,30)
+        task.wait(5)
+        startPlay()
+    elseif autoPlay then
+        task.wait(5)
         startPlay()
     end
-end
-
 end)

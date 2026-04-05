@@ -2,16 +2,22 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 
--- Прямые ссылки (вернул старый формат, раз он работал)
-local GameFolder = ReplicatedStorage:WaitForChild("Game")
-local Functions = GameFolder:WaitForChild("Functions")
-local Events = GameFolder:WaitForChild("Events")
+-- Поиск событий
+local function findDeep(parent, name)
+    for _, child in pairs(parent:GetDescendants()) do
+        if child.Name == name then return child end
+    end
+    return nil
+end
 
-local PlaceTower = Functions:WaitForChild("PlaceTower")
-local UpgradeTower = Functions:WaitForChild("UpgradeTower")
-local RemoteReplay = Events:WaitForChild("Replay")
+local PlaceTower = findDeep(ReplicatedStorage, "PlaceTower")
+local UpgradeTower = findDeep(ReplicatedStorage, "UpgradeTower")
+local RemoteReplay = findDeep(ReplicatedStorage, "Replay")
 
-local steps = {}
+-- ТАБЛИЦА ДЛЯ ХРАНЕНИЯ 3-Х МАКРОСОВ
+local all_slots = { [1] = {}, [2] = {}, [3] = {} }
+local current_slot = 1
+
 local built = {}
 local recording = false
 local playing = false
@@ -19,22 +25,22 @@ local autoPlay = false
 local autoReplay = false
 local startTime = 0
 
---================ GUI (ВОЗВРАЩЕН ПОЛНОСТЬЮ) ================--
+--================ GUI ================--
 local ui = Instance.new("ScreenGui", lp.PlayerGui)
-ui.Name = "CursedMacro_FinalFix"
+ui.Name = "Macro_V9_Slots"
 ui.ResetOnSpawn = false
 
 local main = Instance.new("Frame", ui)
-main.Size = UDim2.new(0, 200, 0, 300) -- Увеличил размер под все кнопки
-main.Position = UDim2.new(0.1, 0, 0.5, -150)
-main.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+main.Size = UDim2.new(0, 220, 0, 380)
+main.Position = UDim2.new(0.1, 0, 0.5, -190)
+main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 main.Active, main.Draggable = true, true
 Instance.new("UICorner", main)
 
-local function createBtn(text, pos, color)
+local function createBtn(text, pos, size, color)
     local b = Instance.new("TextButton", main)
     b.Text = text
-    b.Size = UDim2.new(1, -20, 0, 35)
+    b.Size = size or UDim2.new(1, -20, 0, 35)
     b.Position = pos
     b.BackgroundColor3 = color
     b.TextColor3 = Color3.new(1, 1, 1)
@@ -42,50 +48,61 @@ local function createBtn(text, pos, color)
     return b
 end
 
-local recBtn = createBtn("RECORD", UDim2.new(0, 10, 0, 10), Color3.fromRGB(150, 40, 40))
-local playBtn = createBtn("PLAY (MANUAL)", UDim2.new(0, 10, 0, 50), Color3.fromRGB(40, 120, 40))
-local autoPlayBtn = createBtn("AUTO PLAY: OFF", UDim2.new(0, 10, 0, 90), Color3.fromRGB(60, 60, 60))
-local replayBtn = createBtn("AUTO REPLAY: OFF", UDim2.new(0, 10, 0, 130), Color3.fromRGB(60, 60, 60))
+-- Кнопки слотов
+local s1 = createBtn("SLOT 1", UDim2.new(0, 10, 0, 10), UDim2.new(0, 60, 0, 30), Color3.fromRGB(100, 100, 200))
+local s2 = createBtn("SLOT 2", UDim2.new(0, 80, 0, 10), UDim2.new(0, 60, 0, 30), Color3.fromRGB(60, 60, 60))
+local s3 = createBtn("SLOT 3", UDim2.new(0, 150, 0, 10), UDim2.new(0, 60, 0, 30), Color3.fromRGB(60, 60, 60))
+
+-- Основные кнопки
+local recBtn = createBtn("RECORD", UDim2.new(0, 10, 0, 50), nil, Color3.fromRGB(150, 40, 40))
+local playBtn = createBtn("PLAY (MANUAL)", UDim2.new(0, 10, 0, 95), nil, Color3.fromRGB(40, 120, 40))
+local autoPlayBtn = createBtn("AUTO PLAY: OFF", UDim2.new(0, 10, 0, 140), nil, Color3.fromRGB(60, 60, 60))
+local replayBtn = createBtn("AUTO REPLAY: OFF", UDim2.new(0, 10, 0, 185), nil, Color3.fromRGB(60, 60, 60))
 
 local status = Instance.new("TextLabel", main)
-status.Size = UDim2.new(1, 0, 0, 30)
-status.Position = UDim2.new(0, 0, 0, 260)
-status.Text = "Status: Ready"
+status.Size = UDim2.new(1, 0, 0, 60)
+status.Position = UDim2.new(0, 0, 0, 230)
+status.Text = "Current Slot: 1\nActions: 0\nStatus: Ready"
 status.TextColor3 = Color3.new(1,1,1)
 status.BackgroundTransparency = 1
 
---================ ЛОГИКА ЗАПИСИ (СТАРАЯ) ================--
-PlaceTower.OnClientInvoke = function(name, pos, rotation)
-    if recording then
-        table.insert(steps, {
-            time = tick() - startTime,
-            action = "place",
-            name = name,
-            pos = pos,
-            rot = rotation
-        })
-    end
+-- Переключение слотов
+local function updateSlotUI()
+    s1.BackgroundColor3 = (current_slot == 1) and Color3.fromRGB(100, 100, 200) or Color3.fromRGB(60, 60, 60)
+    s2.BackgroundColor3 = (current_slot == 2) and Color3.fromRGB(100, 100, 200) or Color3.fromRGB(60, 60, 60)
+    s3.BackgroundColor3 = (current_slot == 3) and Color3.fromRGB(100, 100, 200) or Color3.fromRGB(60, 60, 60)
+    status.Text = "Current Slot: "..current_slot.."\nActions: "..#all_slots[current_slot].."\nStatus: Ready"
 end
 
-UpgradeTower.OnClientInvoke = function(tower)
-    if recording then
-        local foundIndex = nil
-        for i, t in pairs(built) do
-            if t == tower then foundIndex = i break end
+s1.MouseButton1Click:Connect(function() current_slot = 1 updateSlotUI() end)
+s2.MouseButton1Click:Connect(function() current_slot = 2 updateSlotUI() end)
+s3.MouseButton1Click:Connect(function() current_slot = 3 updateSlotUI() end)
+
+--================ ЛОГИКА ================--
+
+if PlaceTower then
+    PlaceTower.OnClientInvoke = function(name, pos, rotation)
+        if recording then
+            table.insert(all_slots[current_slot], {time = tick() - startTime, action = "place", name = name, pos = pos, rot = rotation})
         end
-        table.insert(steps, {
-            time = tick() - startTime,
-            action = "upgrade",
-            index = foundIndex or #built
-        })
     end
 end
 
---================ ФУНКЦИЯ ВОСПРОИЗВЕДЕНИЯ ================--
+if UpgradeTower then
+    UpgradeTower.OnClientInvoke = function(tower)
+        if recording then
+            local foundIndex = nil
+            for i, t in pairs(built) do if t == tower then foundIndex = i break end end
+            table.insert(all_slots[current_slot], {time = tick() - startTime, action = "upgrade", index = foundIndex or #built})
+        end
+    end
+end
+
 local function startPlaying()
-    if playing then return end
+    local steps = all_slots[current_slot]
+    if playing or #steps == 0 or not PlaceTower then return end
     playing = true
-    status.Text = "Playing..."
+    status.Text = "Playing Slot "..current_slot.."..."
     built = {}
     local playStart = tick()
     local stepIdx = 1
@@ -96,12 +113,10 @@ local function startPlaying()
             if step.action == "place" then
                 local ok, tower = pcall(function() return PlaceTower:InvokeServer(step.name, step.pos, step.rot) end)
                 if ok and tower then table.insert(built, tower) end
-            
             elseif step.action == "upgrade" then
                 local tower = built[step.index]
                 if tower then
                     local oldPos = tower.PrimaryPart and tower.PrimaryPart.Position
-                    -- ФИКС ТУТ: Обновляем ссылку на новую башню после апгрейда
                     local ok, newTower = pcall(function() return UpgradeTower:InvokeServer(tower) end)
                     if ok and typeof(newTower) == "Instance" then
                         built[step.index] = newTower
@@ -120,17 +135,20 @@ local function startPlaying()
         task.wait(0.05)
     end
     playing = false
-    status.Text = "Done"
+    updateSlotUI()
 end
 
---================ ОБРАБОТКА КНОПОК ================--
 recBtn.MouseButton1Click:Connect(function()
     recording = not recording
     if recording then
-        steps = {}; built = {}; startTime = tick()
-        recBtn.Text = "STOP RECORDING"; status.Text = "Recording..."
+        all_slots[current_slot] = {} -- Очищаем текущий слот перед новой записью
+        built = {}
+        startTime = tick()
+        recBtn.Text = "STOP RECORDING"
+        status.Text = "Recording to Slot "..current_slot.."..."
     else
-        recBtn.Text = "RECORD"; status.Text = "Saved: " .. #steps
+        recBtn.Text = "RECORD"
+        updateSlotUI()
     end
 end)
 
@@ -148,19 +166,12 @@ replayBtn.MouseButton1Click:Connect(function()
     replayBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(60, 60, 60)
 end)
 
---================ АВТО-ЦИКЛ (PLAY И REPLAY) ================--
 task.spawn(function()
     while task.wait(2) do
-        -- Авто-старт при начале раунда
-        if autoPlay and not playing and #steps > 0 then
-            local timer = game.Workspace:FindFirstChild("Timer") -- Проверка, что игра началась
-            if timer or #game.Workspace.Towers:GetChildren() >= 0 then
-                startPlaying()
-            end
+        if autoPlay and not playing and #all_slots[current_slot] > 0 then
+            startPlaying()
         end
-        
-        -- Авто-реплей при конце
-        if autoReplay then
+        if autoReplay and RemoteReplay then
             local victory = lp.PlayerGui:FindFirstChild("VictoryGui")
             local defeat = lp.PlayerGui:FindFirstChild("DefeatGui")
             if (victory and victory.Enabled) or (defeat and defeat.Enabled) then

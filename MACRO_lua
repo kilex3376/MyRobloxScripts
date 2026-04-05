@@ -13,10 +13,7 @@ local function findAssets()
     for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
         if v.Name == "SpawnNewTower" or v.Name == "PlaceTower" then SpawnTower = v
         elseif v.Name == "UpgradeTower" then UpgradeTower = v
-        elseif v.Name == "SkipWave" or v.Name == "VoteSkip" or v.Name == "Skip" or v.Name == "Action" then 
-            -- Проверка, что это именно ремонт/событие скипа
-            if v:IsA("RemoteFunction") or v:IsA("RemoteEvent") then SkipRemote = v end
-        end
+        elseif v.Name == "SkipWave" or v.Name == "VoteSkip" or v.Name == "Skip" then SkipRemote = v end
     end
 end
 findAssets()
@@ -28,26 +25,48 @@ local recording, playing = false, false
 local placed = {} 
 local startTime = 0
 local autoReplay, autoPlay = false, false
-local FLAG_FILE = "macro_autoreplay_v4.json"
 
--- Функция имитации клика
+local SETTINGS_FILE = "macro_settings_v5.json"
+local FLAG_FILE = "macro_rejoin_flag.json"
+
+-- Сохранение настроек (чтобы не выключались)
+local function saveSettings()
+    if writefile then
+        writefile(SETTINGS_FILE, HttpService:JSONEncode({
+            autoReplay = autoReplay,
+            autoPlay = autoPlay,
+            currentSlot = currentSlot
+        }))
+    end
+end
+
+-- Загрузка настроек
+local function loadSettings()
+    if isfile and isfile(SETTINGS_FILE) then
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(SETTINGS_FILE)) end)
+        if ok and data then
+            autoReplay = data.autoReplay or false
+            autoPlay = data.autoPlay or false
+            currentSlot = data.currentSlot or 1
+        end
+    end
+end
+
 local function forceClick(btn)
     if not btn then return end
     pcall(function()
         btn:Activate()
         local pos = btn.AbsolutePosition
         local size = btn.AbsoluteSize
-        local x = pos.X + size.X / 2
-        local y = pos.Y + size.Y / 2
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(pos.X + size.X/2, pos.Y + size.Y/2, 0, true, game, 1)
         task.wait(0.1)
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+        VirtualInputManager:SendMouseButtonEvent(pos.X + size.X/2, pos.Y + size.Y/2, 0, false, game, 1)
     end)
 end
 
 --================ GUI ================--
 local ui = Instance.new("ScreenGui", lp.PlayerGui)
-ui.Name = "Macro_SkipRecord_V5"
+ui.Name = "Macro_Fixed_V6"
 ui.ResetOnSpawn = false
 
 local function createPanel(name, pos, size)
@@ -75,7 +94,7 @@ end
 
 local statusLbl = Instance.new("TextLabel", mainPanel)
 statusLbl.Size, statusLbl.Position = UDim2.new(1, 0, 0, 20), UDim2.new(0, 0, 1, -25)
-statusLbl.BackgroundTransparency, statusLbl.TextColor3, statusLbl.Text = 1, Color3.new(1,1,1), "Ready"
+statusLbl.BackgroundTransparency, statusLbl.TextColor3 = 1, Color3.new(1,1,1)
 
 local slotBtns = {}
 for i = 1, SLOTS do
@@ -88,16 +107,20 @@ local stopBtn = btn(mainPanel, "STOP / SAVE", UDim2.new(0, 10, 0, 175), UDim2.ne
 
 local arBtn = btn(setPanel, "Auto-Replay: OFF", UDim2.new(0, 10, 0, 45), UDim2.new(1, -20, 0, 40))
 local apBtn = btn(setPanel, "Auto-Play: OFF", UDim2.new(0, 10, 0, 90), UDim2.new(1, -20, 0, 40))
-local clearBtn = btn(setPanel, "DELETE DATA", UDim2.new(0, 10, 0, 140), UDim2.new(1, -20, 0, 30), Color3.fromRGB(120, 40, 40))
+local clearBtn = btn(setPanel, "DELETE DATA", UDim2.new(0, 10, 0, 140), UDim2.new(1, -20, 0, 30), Color3.fromRGB(100, 30, 30))
 
 local function updateUI()
     for i = 1, SLOTS do
         slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(80, 70, 200) or Color3.fromRGB(45, 45, 45)
     end
+    arBtn.Text = "Auto-Replay: " .. (autoReplay and "ON" or "OFF")
+    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(30, 140, 30) or Color3.fromRGB(45, 45, 45)
+    apBtn.Text = "Auto-Play: " .. (autoPlay and "ON" or "OFF")
+    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30, 140, 30) or Color3.fromRGB(45, 45, 45)
     statusLbl.Text = playing and "PLAYING..." or (recording and "RECORDING..." or "Slot "..currentSlot)
 end
 
---================ ЛОГИКА ВОСПРОИЗВЕДЕНИЯ ================--
+--================ ЛОГИКА PLAY ================--
 local function startPlay()
     if playing or #allMacros[currentSlot] == 0 then return end
     playing = true
@@ -105,10 +128,20 @@ local function startPlay()
     
     task.spawn(function()
         local built = {}
-        local startT = os.clock()
+        -- Если включили в середине игры, считаем время от начала раунда (00:00 на таймере)
+        local gameTimeOffset = 0 
+        pcall(function()
+            local timerStr = lp.PlayerGui.GameGui.Main.Top.Timer.Text -- Путь может отличаться
+            local m, s = timerStr:match("(%d+):(%d+)")
+            gameTimeOffset = tonumber(m)*60 + tonumber(s)
+        end)
+
+        local startT = os.clock() - gameTimeOffset
         
         for _, step in ipairs(allMacros[currentSlot]) do
             if not playing then break end
+            if step.t < gameTimeOffset then continue end -- Пропускаем старые действия
+            
             while os.clock() < startT + step.t do RunService.Heartbeat:Wait() end
             
             pcall(function()
@@ -118,23 +151,16 @@ local function startPlay()
                 elseif step.action == "upgrade" and built[step.index] then
                     UpgradeTower:InvokeServer(built[step.index])
                 elseif step.action == "skip" then
-                    if SkipRemote then 
-                        if SkipRemote:IsA("RemoteFunction") then SkipRemote:InvokeServer() else SkipRemote:FireServer() end
-                    end
+                    if SkipRemote then SkipRemote:InvokeServer() end
                 end
             end)
         end
         
-        -- Ожидание конца матча
+        -- Реплей
         while playing do
-            local gui = lp.PlayerGui:FindFirstChild("GameGui")
-            local endScreen = gui and gui:FindFirstChild("EndScreen")
-            local replayBtn = endScreen and (endScreen:FindFirstChild("Play Again") or endScreen:FindFirstChild("Replay"))
-            
+            local replayBtn = lp.PlayerGui:FindFirstChild("EndScreen", true)
             if replayBtn and replayBtn.Visible then
                 if autoReplay then
-                    statusLbl.Text = "REJOINING..."
-                    if writefile then writefile(FLAG_FILE, HttpService:JSONEncode({slot = currentSlot})) end
                     task.wait(2)
                     forceClick(replayBtn)
                     task.wait(5)
@@ -142,48 +168,44 @@ local function startPlay()
                 end
                 break
             end
-            task.wait(1)
+            task.wait(2)
         end
         playing = false
         updateUI()
     end)
 end
 
---================ ХУК ДЛЯ ЗАПИСИ (SPAWN, UPGRADE, SKIP) ================--
+--================ ХУКИ ================--
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
     local args = {...}
-    
     if recording and not checkcaller() then
-        -- Запись спавна
-        if self == SpawnTower and (method == "InvokeServer" or method == "FireServer") then
+        if self == SpawnTower and method == "InvokeServer" then
             local res = old(self, ...)
-            if res or method == "FireServer" then
+            if res then
                 local idx = #placed + 1
-                placed[idx] = res or "spawned" -- Заглушка, если сервер не возвращает объект сразу
+                placed[idx] = res
                 table.insert(allMacros[currentSlot], {action = "spawn", id = args[1], x = args[2].X, y = args[2].Y, z = args[2].Z, index = idx, t = os.clock() - startTime})
             end
             return res
-        -- Запись прокачки
-        elseif self == UpgradeTower and (method == "InvokeServer" or method == "FireServer") then
+        elseif self == UpgradeTower and method == "InvokeServer" then
             for i, v in pairs(placed) do
                 if v == args[1] then
                     table.insert(allMacros[currentSlot], {action = "upgrade", index = i, t = os.clock() - startTime})
                     break
                 end
             end
-        -- ЗАПИСЬ СКИПА (Теперь ловит нажатие игроком)
-        elseif self == SkipRemote and (method == "InvokeServer" or method == "FireServer") then
+        elseif self == SkipRemote and method == "InvokeServer" then
             table.insert(allMacros[currentSlot], {action = "skip", t = os.clock() - startTime})
         end
     end
     return old(self, ...)
 end)
 
---================ ОБРАБОТКА КНОПОК ================--
+--================ КНОПКИ ================--
 for i = 1, SLOTS do
     slotBtns[i].MouseButton1Click:Connect(function()
-        if not recording and not playing then currentSlot = i updateUI() end
+        if not recording and not playing then currentSlot = i saveSettings() updateUI() end
     end)
 end
 
@@ -203,14 +225,15 @@ playBtn.MouseButton1Click:Connect(startPlay)
 
 arBtn.MouseButton1Click:Connect(function()
     autoReplay = not autoReplay
-    arBtn.Text = "Auto-Replay: " .. (autoReplay and "ON" or "OFF")
-    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(30, 140, 30) or Color3.fromRGB(45, 45, 45)
+    saveSettings()
+    updateUI()
 end)
 
 apBtn.MouseButton1Click:Connect(function()
     autoPlay = not autoPlay
-    apBtn.Text = "Auto-Play: " .. (autoPlay and "ON" or "OFF")
-    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30, 140, 30) or Color3.fromRGB(45, 45, 45)
+    saveSettings()
+    updateUI()
+    if autoPlay then startPlay() end
 end)
 
 clearBtn.MouseButton1Click:Connect(function()
@@ -218,29 +241,18 @@ clearBtn.MouseButton1Click:Connect(function()
     updateUI()
 end)
 
---================ ЗАГРУЗКА ================--
-task.spawn(function()
-    for i = 1, SLOTS do
-        pcall(function()
-            if isfile and isfile("macro_s"..i..".json") then
-                allMacros[i] = HttpService:JSONDecode(readfile("macro_s"..i..".json"))
-            end
-        end)
-    end
-    updateUI()
-    
-    if isfile and isfile(FLAG_FILE) then
-        local data = HttpService:JSONDecode(readfile(FLAG_FILE))
-        if data and data.slot then
-            currentSlot, autoReplay = data.slot, true
-            arBtn.BackgroundColor3 = Color3.fromRGB(30, 140, 30)
-            arBtn.Text = "Auto-Replay: ON"
-            pcall(function() delfile(FLAG_FILE) end)
-            task.wait(7)
-            startPlay()
+--================ СТАРТ ================--
+loadSettings()
+for i = 1, SLOTS do
+    pcall(function()
+        if isfile and isfile("macro_s"..i..".json") then
+            allMacros[i] = HttpService:JSONDecode(readfile("macro_s"..i..".json"))
         end
-    elseif autoPlay then
-        task.wait(7)
-        startPlay()
-    end
+    end)
+end
+updateUI()
+
+task.spawn(function()
+    task.wait(7)
+    if autoPlay then startPlay() end
 end)

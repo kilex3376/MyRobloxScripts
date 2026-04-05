@@ -26,9 +26,8 @@ local placed = {}
 local startTime = 0
 local autoReplay, autoPlay = false, false
 
-local CONFIG_FILE = "macro_config_v6.json"
+local CONFIG_FILE = "macro_v7_config.json"
 
--- Сохранение состояний кнопок
 local function saveConfig()
     if writefile then
         writefile(CONFIG_FILE, HttpService:JSONEncode({
@@ -39,7 +38,6 @@ local function saveConfig()
     end
 end
 
--- Загрузка состояний
 local function loadConfig()
     if isfile and isfile(CONFIG_FILE) then
         local ok, data = pcall(function() return HttpService:JSONDecode(readfile(CONFIG_FILE)) end)
@@ -54,71 +52,47 @@ end
 local function forceClick(btn)
     if not btn then return end
     pcall(function()
-        btn:Activate()
         local pos = btn.AbsolutePosition
         local size = btn.AbsoluteSize
         VirtualInputManager:SendMouseButtonEvent(pos.X + size.X/2, pos.Y + size.Y/2, 0, true, game, 1)
-        task.wait(0.1)
+        task.wait(0.05)
         VirtualInputManager:SendMouseButtonEvent(pos.X + size.X/2, pos.Y + size.Y/2, 0, false, game, 1)
     end)
 end
 
---================ GUI (Компактный стиль) ================--
+--================ GUI ================--
 local ui = Instance.new("ScreenGui", lp.PlayerGui)
-ui.Name = "Macro_V6_Stable"
+ui.Name = "Macro_V7_Final"
 ui.ResetOnSpawn = false
 
-local function createPanel(name, pos, size)
-    local f = Instance.new("Frame", ui)
-    f.Name = name
-    f.Size, f.Position = size, pos
-    f.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    f.BorderSizePixel = 0
-    f.Active, f.Draggable = true, true
-    Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
-    return f
-end
+local main = Instance.new("Frame", ui)
+main.Size = UDim2.new(0, 150, 0, 200)
+main.Position = UDim2.new(0, 15, 0.5, -100)
+main.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Instance.new("UICorner", main)
 
--- Уменьшенные размеры панелей
-local mainPanel = createPanel("Main", UDim2.new(0, 20, 0.5, -100), UDim2.new(0, 160, 0, 200))
-local setPanel = createPanel("Settings", UDim2.new(0, 185, 0.5, -100), UDim2.new(0, 160, 0, 180))
-
-local function btn(p, txt, pos, size, color)
+local function btn(p, txt, y, h, color)
     local b = Instance.new("TextButton", p)
-    b.Size, b.Position, b.Text = size, pos, txt
-    b.BackgroundColor3 = color or Color3.fromRGB(40, 40, 40)
+    b.Size, b.Position = UDim2.new(1, -14, 0, h), UDim2.new(0, 7, 0, y)
+    b.Text, b.BackgroundColor3 = txt, color or Color3.fromRGB(45, 45, 45)
     b.TextColor3, b.Font, b.TextSize = Color3.new(1,1,1), Enum.Font.GothamBold, 10
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", b)
     return b
 end
 
-local statusLbl = Instance.new("TextLabel", mainPanel)
-statusLbl.Size, statusLbl.Position = UDim2.new(1, 0, 0, 20), UDim2.new(0, 0, 1, -22)
-statusLbl.BackgroundTransparency, statusLbl.TextColor3, statusLbl.Text = 1, Color3.new(1,1,1), "READY"
-statusLbl.Font, statusLbl.TextSize = Enum.Font.GothamBold, 10
-
-local slotBtns = {}
-for i = 1, SLOTS do
-    slotBtns[i] = btn(mainPanel, "S"..i, UDim2.new(0, 5 + (i-1)*52, 0, 10), UDim2.new(0, 48, 0, 30))
-end
-
-local recBtn = btn(mainPanel, "START RECORD", UDim2.new(0, 10, 0, 50), UDim2.new(1, -20, 0, 35), Color3.fromRGB(60, 30, 30))
-local playBtn = btn(mainPanel, "PLAY MACRO", UDim2.new(0, 10, 0, 90), UDim2.new(1, -20, 0, 35), Color3.fromRGB(30, 60, 30))
-local stopBtn = btn(mainPanel, "STOP / SAVE", UDim2.new(0, 10, 0, 130), UDim2.new(1, -20, 0, 35))
-
-local arBtn = btn(setPanel, "Auto-Replay: OFF", UDim2.new(0, 10, 0, 15), UDim2.new(1, -20, 0, 35))
-local apBtn = btn(setPanel, "Auto-Play: OFF", UDim2.new(0, 10, 0, 55), UDim2.new(1, -20, 0, 35))
-local delBtn = btn(setPanel, "DELETE DATA", UDim2.new(0, 10, 0, 105), UDim2.new(1, -20, 0, 25), Color3.fromRGB(100, 30, 30))
+local slotBtn = btn(main, "SLOT: "..currentSlot, 10, 25)
+local recBtn = btn(main, "START RECORD", 40, 35, Color3.fromRGB(80, 35, 35))
+local playBtn = btn(main, "PLAY MACRO", 80, 35, Color3.fromRGB(35, 80, 35))
+local arBtn = btn(main, "AUTO REPLAY: OFF", 120, 30)
+local apBtn = btn(main, "AUTO PLAY: OFF", 155, 30)
 
 local function updateUI()
-    for i = 1, SLOTS do
-        slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(80, 70, 200) or Color3.fromRGB(40, 40, 40)
-    end
-    arBtn.Text = "Auto-Replay: " .. (autoReplay and "ON" or "OFF")
-    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(30, 140, 30) or Color3.fromRGB(40, 40, 40)
-    apBtn.Text = "Auto-Play: " .. (autoPlay and "ON" or "OFF")
-    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30, 140, 30) or Color3.fromRGB(40, 40, 40)
-    statusLbl.Text = playing and "PLAYING..." or (recording and "RECORDING..." or "READY SLOT "..currentSlot)
+    slotBtn.Text = "SLOT: "..currentSlot.." ("..#allMacros[currentSlot]..")"
+    arBtn.Text = "REPLAY: "..(autoReplay and "ON" or "OFF")
+    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(30, 130, 30) or Color3.fromRGB(45, 45, 45)
+    apBtn.Text = "AUTO PLAY: "..(autoPlay and "ON" or "OFF")
+    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(30, 130, 30) or Color3.fromRGB(45, 45, 45)
+    recBtn.Text = recording and "RECORDING..." or "START RECORD"
 end
 
 --================ ЛОГИКА PLAY ================--
@@ -129,46 +103,37 @@ local function startPlay()
     
     task.spawn(function()
         local built = {}
-        -- Вычисление времени для старта в середине игры
-        local currentWaveTime = 0
-        pcall(function()
-            local timer = lp.PlayerGui:FindFirstChild("Timer", true) or lp.PlayerGui:FindFirstChild("Time", true)
-            if timer then
-                local m, s = timer.Text:match("(%d+):(%d+)")
-                currentWaveTime = tonumber(m)*60 + tonumber(s)
-            end
-        end)
-
-        local playbackStart = os.clock() - currentWaveTime
+        local startT = os.clock()
         
         for _, step in ipairs(allMacros[currentSlot]) do
             if not playing then break end
-            if step.t < currentWaveTime then continue end -- Скипаем то что уже прошло
-            
-            while os.clock() < playbackStart + step.t do RunService.Heartbeat:Wait() end
+            while os.clock() < startT + step.t do RunService.Heartbeat:Wait() end
             
             pcall(function()
                 if step.action == "spawn" then
                     local ok, t = SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z))
-                    if ok and t then built[step.index] = t end
+                    if ok then built[step.index] = t end
                 elseif step.action == "upgrade" and built[step.index] then
                     UpgradeTower:InvokeServer(built[step.index])
                 elseif step.action == "skip" then
                     if SkipRemote then SkipRemote:InvokeServer() end
+                    local skipUI = lp.PlayerGui:FindFirstChild("Autoskip", true)
+                    if skipUI then forceClick(skipUI) end
+                elseif step.action == "rejoin" then
+                    local rb = lp.PlayerGui:FindFirstChild("Play Again", true)
+                    if rb then forceClick(rb) end
                 end
             end)
         end
         
-        -- Цикл ожидания победы
+        -- Пост-проверка на Replay
         while playing do
-            local replayBtn = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true)
-            if replayBtn and replayBtn.Visible then
-                if autoReplay then
-                    task.wait(2)
-                    forceClick(replayBtn)
-                    task.wait(5)
-                    TeleportService:Teleport(game.PlaceId, lp)
-                end
+            local replay = lp.PlayerGui:FindFirstChild("Play Again", true)
+            if replay and replay.Visible and autoReplay then
+                task.wait(2)
+                forceClick(replay)
+                task.wait(5)
+                TeleportService:Teleport(game.PlaceId)
                 break
             end
             task.wait(2)
@@ -178,39 +143,58 @@ local function startPlay()
     end)
 end
 
---================ ХУКИ ЗАПИСИ ================--
+--================ ХУК ЗАПИСИ ================--
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
     local args = {...}
-    if recording and not checkcaller() and method == "InvokeServer" then
-        if self == SpawnTower then
+    
+    if recording and not checkcaller() then
+        if self == SpawnTower and method == "InvokeServer" then
             local res = old(self, ...)
             if res then
-                local idx = #placed + 1
-                placed[idx] = res
-                table.insert(allMacros[currentSlot], {action = "spawn", id = args[1], x = args[2].X, y = args[2].Y, z = args[2].Z, index = idx, t = os.clock() - startTime})
+                table.insert(allMacros[currentSlot], {action="spawn", id=args[1], x=args[2].X, y=args[2].Y, z=args[2].Z, index=#placed+1, t=os.clock()-startTime})
+                table.insert(placed, res)
             end
             return res
-        elseif self == UpgradeTower then
+        elseif self == UpgradeTower and method == "InvokeServer" then
             for i, v in pairs(placed) do
-                if v == args[1] then
-                    table.insert(allMacros[currentSlot], {action = "upgrade", index = i, t = os.clock() - startTime})
-                    break
-                end
+                if v == args[1] then table.insert(allMacros[currentSlot], {action="upgrade", index=i, t=os.clock()-startTime}) break end
             end
         elseif self == SkipRemote then
-            table.insert(allMacros[currentSlot], {action = "skip", t = os.clock() - startTime})
+            table.insert(allMacros[currentSlot], {action="skip", t=os.clock()-startTime})
         end
     end
     return old(self, ...)
 end)
 
+-- Слежка за кнопками UI во время записи
+RunService.Heartbeat:Connect(function()
+    if recording then
+        local replay = lp.PlayerGui:FindFirstChild("Play Again", true)
+        if replay and replay.Visible then
+            local connection; connection = replay.MouseButton1Click:Connect(function()
+                table.insert(allMacros[currentSlot], {action="rejoin", t=os.clock()-startTime})
+                recording = false -- АВТО-СТОП ПРИ НАЖАТИИ REPLAY
+                if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
+                updateUI()
+                connection:Disconnect()
+            end)
+        end
+        
+        -- Запись ручного скипа через кнопку
+        local skip = lp.PlayerGui:FindFirstChild("Autoskip", true)
+        if skip and skip:IsA("GuiButton") then
+             skip.MouseButton1Click:Connect(function()
+                table.insert(allMacros[currentSlot], {action="skip", t=os.clock()-startTime})
+             end)
+        end
+    end
+end)
+
 --================ УПРАВЛЕНИЕ ================--
-for i = 1, SLOTS do
-    slotBtns[i].MouseButton1Click:Connect(function()
-        if not recording and not playing then currentSlot = i saveConfig() updateUI() end
-    end)
-end
+slotBtn.MouseButton1Click:Connect(function()
+    if not recording then currentSlot = (currentSlot % SLOTS) + 1 saveConfig() updateUI() end
+end)
 
 recBtn.MouseButton1Click:Connect(function()
     if playing then return end
@@ -218,33 +202,10 @@ recBtn.MouseButton1Click:Connect(function()
     updateUI()
 end)
 
-stopBtn.MouseButton1Click:Connect(function()
-    recording = false
-    if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
-    updateUI()
-end)
-
 playBtn.MouseButton1Click:Connect(startPlay)
+arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay saveConfig() updateUI() end)
+apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay saveConfig() updateUI() if autoPlay then startPlay() end end)
 
-arBtn.MouseButton1Click:Connect(function()
-    autoReplay = not autoReplay
-    saveConfig()
-    updateUI()
-end)
-
-apBtn.MouseButton1Click:Connect(function()
-    autoPlay = not autoPlay
-    saveConfig()
-    updateUI()
-    if autoPlay then startPlay() end
-end)
-
-delBtn.MouseButton1Click:Connect(function()
-    allMacros[currentSlot] = {}
-    updateUI()
-end)
-
---================ ЗАГРУЗКА ================--
 loadConfig()
 for i = 1, SLOTS do
     pcall(function()
@@ -255,7 +216,4 @@ for i = 1, SLOTS do
 end
 updateUI()
 
-task.spawn(function()
-    task.wait(6)
-    if autoPlay then startPlay() end
-end)
+if autoPlay then task.delay(7, startPlay) end

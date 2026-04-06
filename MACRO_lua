@@ -6,7 +6,7 @@ local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local SpawnTower, UpgradeTower, SkipWave, AutoSkip, MoneyValue
 
--- // 1. ТВОЙ ПОИСК REMOTES (БЕЗ ИЗМЕНЕНИЙ)
+-- // 1. ПОИСК REMOTES
 task.spawn(function()
     while not SpawnTower or not UpgradeTower do
         for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
@@ -31,7 +31,7 @@ local placed = {}
 local startTime = 0
 local autoReplay, autoPlay = false, false
 
--- // СОХРАНЕНИЕ НАСТРОЕК
+-- // СОХРАНЕНИЕ
 local SETTINGS_FILE = "macro_settings_v24.json"
 local function saveSettings()
     if writefile then writefile(SETTINGS_FILE, HttpService:JSONEncode({autoReplay = autoReplay, autoPlay = autoPlay, slot = currentSlot})) end
@@ -43,11 +43,10 @@ local function loadSettings()
     end
 end
 
--- // GUI (ТВОЙ СТИЛЬ + КНОПКИ AUTO)
+-- // GUI
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
 gui.Name = "MacroV24_Final"
 gui.ResetOnSpawn = false
-
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 300) 
 frame.Position = UDim2.new(0, 20, 0.5, -150)
@@ -57,11 +56,11 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,10)
 
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1,0,0,25)
-title.Text = "Macro V24.1"
+title.Text = "Macro V24.2 (Fix Upgr)"
 title.TextColor3 = Color3.new(1,1,1)
 title.BackgroundTransparency = 1
 title.Font = Enum.Font.SourceSansBold
-title.TextSize = 20
+title.TextSize = 18
 
 local slotBtns = {}
 local function refreshSlots()
@@ -118,7 +117,19 @@ local function updateToggles()
     recBtn.Text = recording and "STOP & SAVE" or "Record"
 end
 
--- // 2. ПЛЕЕР С ФИКСОМ АПГРЕЙДА (V20+)
+-- // ФУНКЦИЯ ПОИСКА БАШНИ ПО КООРДИНАТАМ
+local function findTowerAtPos(x, y, z)
+    local targetPos = Vector3.new(x, y, z)
+    for _, v in pairs(workspace:FindFirstChild("Towers", true):GetChildren()) do
+        local p = v.PrimaryPart or v:FindFirstChild("HumanoidRootPart")
+        if p and (p.Position - targetPos).Magnitude < 2.5 then
+            return v
+        end
+    end
+    return nil
+end
+
+-- // ПЛЕЕР
 local function doPlay()
     if #allMacros[currentSlot] == 0 or playing then return end
     playing = true
@@ -135,15 +146,22 @@ local function doPlay()
                 if ok then built[step.index] = tower end
             elseif step.action == "upgrade" then
                 local tower = built[step.index]
+                
+                -- УСИЛЕННЫЙ ПОИСК (3 попытки с ожиданием)
                 if not tower or not tower.Parent then
-                    for _, v in pairs(workspace:FindFirstChild("Towers", true):GetChildren()) do
-                        local p = v.PrimaryPart or v:FindFirstChild("HumanoidRootPart")
-                        if p and (p.Position - Vector3.new(step.x, step.y, step.z)).Magnitude < 2 then
-                            tower = v; built[step.index] = v; break
-                        end
+                    for i = 1, 3 do
+                        tower = findTowerAtPos(step.x, step.y, step.z)
+                        if tower then built[step.index] = tower break end
+                        task.wait(0.2)
                     end
                 end
-                if tower then pcall(function() local res = UpgradeTower:InvokeServer(tower) if typeof(res) == "Instance" then built[step.index] = res end end) end
+
+                if tower then 
+                    pcall(function() 
+                        local res = UpgradeTower:InvokeServer(tower) 
+                        if typeof(res) == "Instance" then built[step.index] = res end 
+                    end) 
+                end
             elseif step.action == "skip" or step.action == "autoskip" then
                 local rem = (step.action == "skip") and SkipWave or AutoSkip
                 pcall(function() 
@@ -156,7 +174,7 @@ local function doPlay()
     end)
 end
 
--- // 3. ХУКИ (ЗАПИСЬ С ФИКСОМ ПОЗИТИЦИИ)
+-- // ХУКИ
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     local method = getnamecallmethod()
@@ -179,7 +197,13 @@ local old; old = hookmetamethod(game, "__namecall", function(self, ...)
                     end
                 end
             end
-            if foundIdx then table.insert(allMacros[currentSlot], {action="upgrade", index=foundIdx, t=os.clock()-startTime}) end
+            if foundIdx then 
+                local p = tower.PrimaryPart or tower:FindFirstChild("HumanoidRootPart")
+                table.insert(allMacros[currentSlot], {
+                    action="upgrade", index=foundIdx, t=os.clock()-startTime,
+                    x=p.Position.X, y=p.Position.Y, z=p.Position.Z -- Сохраняем координаты для поиска при воспроизведении
+                }) 
+            end
         elseif (self == SkipWave or self == AutoSkip) and (method == "InvokeServer" or method == "FireServer") then
             table.insert(allMacros[currentSlot], {action=(self == AutoSkip and "autoskip" or "skip"), value=args[1], t=os.clock()-startTime})
         end
@@ -187,7 +211,7 @@ local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     return old(self, ...)
 end)
 
--- // 4. КНОПКИ И ЦИКЛЫ
+-- // КНОПКИ
 recBtn.MouseButton1Click:Connect(function()
     if not recording then
         allMacros[currentSlot], placed, startTime, recording = {}, {}, os.clock(), true
@@ -200,19 +224,8 @@ recBtn.MouseButton1Click:Connect(function()
 end)
 
 playBtn.MouseButton1Click:Connect(doPlay)
-
-arBtn.MouseButton1Click:Connect(function() 
-    autoReplay = not autoReplay 
-    saveSettings() 
-    updateToggles() 
-end)
-
-apBtn.MouseButton1Click:Connect(function() 
-    autoPlay = not autoPlay 
-    saveSettings() 
-    updateToggles() 
-end)
-
+arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay saveSettings() updateToggles() end)
+apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay saveSettings() updateToggles() end)
 delBtn.MouseButton1Click:Connect(function()
     allMacros[currentSlot] = {}
     local f = "macro_s"..currentSlot..".json"
@@ -231,7 +244,7 @@ refreshSlots()
 
 if autoPlay then task.delay(5, doPlay) end
 
--- // ТВОЙ ЦИКЛ AUTO REPLAY (БЕЗ ИЗМЕНЕНИЙ)
+-- // AUTO REPLAY
 task.spawn(function()
     while task.wait(3) do
         if autoReplay and not recording and not playing then

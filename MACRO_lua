@@ -27,7 +27,7 @@ local SLOTS = 3
 local currentSlot = 1
 local allMacros = {{}, {}, {}} 
 local recording, playing = false, false
-local placed = {} -- Очищается при старте записи
+local placed = {} 
 local startTime = 0
 local autoReplay, autoPlay = false, false
 
@@ -45,7 +45,7 @@ end
 
 -- // GUI
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "MacroV24_3"
+gui.Name = "MacroV24_4"
 gui.ResetOnSpawn = false
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 300) 
@@ -56,7 +56,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,10)
 
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1,0,0,25)
-title.Text = "Macro V24.3 (FIXED)"
+title.Text = "Macro V24.4"
 title.TextColor3 = Color3.new(1,1,1)
 title.BackgroundTransparency = 1
 title.Font = Enum.Font.SourceSansBold
@@ -140,7 +140,7 @@ local function doPlay()
     status.Text = "Playing S"..currentSlot
     
     task.spawn(function()
-        local built = {} -- Очищаем список построенных башен перед запуском
+        local built = {} 
         local begin = os.clock()
         
         for _, step in ipairs(allMacros[currentSlot]) do
@@ -209,7 +209,6 @@ end)
 -- // КНОПКИ
 recBtn.MouseButton1Click:Connect(function()
     if not recording then
-        -- ЖЕСТКАЯ ОЧИСТКА ПЕРЕД ЗАПИСЬЮ
         allMacros[currentSlot] = {}
         placed = {} 
         startTime = os.clock()
@@ -249,12 +248,25 @@ refreshSlots()
 
 if autoPlay then task.delay(5, doPlay) end
 
--- // AUTO REPLAY
+-- // ВОТ ТУТ ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ: АВТО-СОХРАНЕНИЕ И АВТО-РЕПЛЕЙ
 task.spawn(function()
-    while task.wait(3) do
-        if autoReplay and not recording and not playing then
-            local rb = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true)
-            if rb and rb.Visible then 
+    while task.wait(1) do -- Уменьшил таймаут до 1 сек, чтобы быстрее ловил окно
+        local rb = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true)
+        
+        if rb and rb.Visible then
+            -- 1. Если шла запись макроса — сначала СОХРАНЯЕМ
+            if recording then
+                recording = false
+                if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
+                pcall(function()
+                    status.Text = "Saved S"..currentSlot
+                    updateToggles()
+                    refreshSlots()
+                end)
+            end
+            
+            -- 2. Затем (если включен авто-реплей) — НАЖИМАЕМ КНОПКУ
+            if autoReplay and not playing then
                 pcall(function() 
                     for _, c in ipairs(getconnections(rb.MouseButton1Click)) do c:Fire() end 
                     for _, c in ipairs(getconnections(rb.Activated)) do c:Fire() end

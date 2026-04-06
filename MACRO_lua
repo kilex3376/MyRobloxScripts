@@ -10,20 +10,20 @@ local SpawnTower, UpgradeTower, SkipWave, AutoSkip, MoneyValue, RemoteReplay
 
 -- 1. ПОИСК REMOTES (В отдельном потоке, чтобы точно найти)
 task.spawn(function()
-    while not SpawnTower or not UpgradeTower do
+    while not SpawnTower or not UpgradeTower or not SkipWave do
         for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
             local n = v.Name:lower()
 
-            if n == "spawnnewtower" or n == "placetower" then
+            if not SpawnTower and (n == "spawnnewtower" or n == "placetower") then
                 SpawnTower = v
 
-            elseif n == "upgradetower" then
+            elseif not UpgradeTower and n == "upgradetower" then
                 UpgradeTower = v
 
-            elseif n == "skipwave" or n == "voteskip" or n == "skip" then
+            elseif not SkipWave and (n == "skipwave" or n == "voteskip" or n == "skip") then
                 SkipWave = v
 
-            elseif n:find("autoskip") or n:find("toggleskip") or n:find("votemode") then
+            elseif not AutoSkip and (n:find("autoskip") or n:find("toggleskip") or n:find("votemode")) then
                 AutoSkip = v
             end
         end

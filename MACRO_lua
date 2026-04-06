@@ -119,23 +119,41 @@ local function doPlay()
             while os.clock() < begin + step.t do RunService.Heartbeat:Wait() end
             
             if step.action == "spawn" then
-                local ok, tower = pcall(function() return SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z)) end)
-                if ok then built[step.index] = tower end
-            elseif step.action == "upgrade" then
-                local tower = built[step.index]
-                if tower then
-                    local ok, newTower = pcall(function() return UpgradeTower:InvokeServer(tower) end)
-                    if ok and typeof(newTower) == "Instance" then built[step.index] = newTower 
-                    else
-                        task.wait(0.1)
-                        local towersFolder = game.Workspace:FindFirstChild("Towers") or game.Workspace
-                        for _, v in pairs(towersFolder:GetChildren()) do
-                            if v.PrimaryPart and (v.PrimaryPart.Position - Vector3.new(step.x, step.y, step.z)).Magnitude < 1 then
-                                built[step.index] = v break
-                            end
-                        end
-                    end
+    local ok, tower = pcall(function()
+        return SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z))
+    end)
+
+    if ok and tower then
+        built[step.index] = tower
+    end
+
+elseif step.action == "upgrade" then
+    local tower = built[step.index]
+
+    if tower then
+        local ok, newTower = pcall(function()
+            return UpgradeTower:InvokeServer(tower)
+        end)
+
+        task.wait(0.3)
+
+        if ok and typeof(newTower) == "Instance" and newTower then
+            built[step.index] = newTower
+        else
+            local towersFolder = workspace:FindFirstChild("Towers") or workspace
+
+            for _, v in pairs(towersFolder:GetChildren()) do
+                local pp = v.PrimaryPart or v:FindFirstChild("HumanoidRootPart")
+
+                if pp and (pp.Position - Vector3.new(step.x, step.y, step.z)).Magnitude < 3 then
+                    built[step.index] = v
+                    break
                 end
+            end
+        end
+    end
+
+
             elseif step.action == "skip" then
                 pcall(function() if SkipWave:IsA("RemoteFunction") then SkipWave:InvokeServer() else SkipWave:FireServer() end end)
             end

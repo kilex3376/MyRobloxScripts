@@ -6,17 +6,25 @@ local GuiService = game:GetService("GuiService")
 local userInput = game:GetService("UserInputService")
 
 local lp = Players.LocalPlayer
-local SpawnTower, UpgradeTower, SkipWave, AutoSkip, MoneyValue, RemoteReplay
 
--- 1. ПОИСК REMOTES (В отдельном потоке, чтобы точно найти)
+-- ТВОИ НАСТРОЙКИ (ЗАМЕНЕНО)
+local SpawnTower
+local UpgradeTower
+local SkipWave
+local AutoSkip
+local MoneyValue
+
 task.spawn(function()
     while not SpawnTower or not UpgradeTower do
         for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
-            if v.Name == "SpawnNewTower" or v.Name == "PlaceTower" then SpawnTower = v
-            elseif v.Name == "UpgradeTower" then UpgradeTower = v
-            elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then SkipWave = v
-            elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then AutoSkip = v
-            elseif v.Name == "Replay" or v.Name == "PlayAgain" then RemoteReplay = v
+            if v.Name == "SpawnNewTower" then
+                SpawnTower = v
+            elseif v.Name == "UpgradeTower" then
+                UpgradeTower = v
+            elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then
+                SkipWave = v
+            elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then
+                AutoSkip = v
             end
         end
         task.wait(1)
@@ -43,7 +51,7 @@ local function loadSettings()
     end
 end
 
--- КЛИК БЕЗ БАГА МЫШИ
+-- КЛИК
 local function forceClick(btn)
     if not btn then return end
     pcall(function()
@@ -53,7 +61,7 @@ local function forceClick(btn)
     GuiService.SelectedObject = nil
 end
 
--- GUI
+-- GUI (БЕЗ ИЗМЕНЕНИЙ)
 local ui = Instance.new("ScreenGui", lp.PlayerGui)
 ui.Name = "Macro_V19"
 ui.ResetOnSpawn = false
@@ -92,7 +100,7 @@ local function updateUI()
     recBtn.BackgroundColor3 = recording and Color3.fromRGB(200, 0, 0) or Color3.fromRGB(80, 30, 30)
 end
 
--- ПЛЕЕР ( doPlay )
+-- ПЛЕЕР
 local function doPlay()
     if playing or #allMacros[currentSlot] == 0 then return end
     playing = true
@@ -110,8 +118,7 @@ local function doPlay()
                 local tower = built[step.index]
                 if tower then
                     local ok, newTower = pcall(function() return UpgradeTower:InvokeServer(tower) end)
-                    if ok and typeof(newTower) == "Instance" then built[step.index] = newTower 
-                    else
+                    if not ok or typeof(newTower) ~= "Instance" then
                         task.wait(0.1)
                         local towersFolder = game.Workspace:FindFirstChild("Towers") or game.Workspace
                         for _, v in pairs(towersFolder:GetChildren()) do
@@ -119,6 +126,8 @@ local function doPlay()
                                 built[step.index] = v break
                             end
                         end
+                    else
+                        built[step.index] = newTower
                     end
                 end
             elseif step.action == "skip" then
@@ -129,7 +138,7 @@ local function doPlay()
     end)
 end
 
--- ХУКИ (ЗАПИСЬ)
+-- ХУКИ
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     local method = getnamecallmethod()
@@ -178,7 +187,7 @@ for i=1, SLOTS do pcall(function() if isfile("macro_s"..i..".json") then allMacr
 updateUI()
 if autoPlay then task.spawn(function() task.wait(5); doPlay() end) end
 
--- AUTO REPLAY ЦИКЛ
+-- AUTO REPLAY
 task.spawn(function()
     while task.wait(3) do
         if autoReplay and not recording and not playing then
@@ -187,3 +196,5 @@ task.spawn(function()
         end
     end
 end)
+
+userInput.OverrideMouseIconBehavior = Enum.MouseIconBehavior.Default

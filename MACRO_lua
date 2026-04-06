@@ -6,10 +6,10 @@ local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local SpawnTower, UpgradeTower, SkipWave, AutoSkip, MoneyValue
 
--- // ТВОЙ ПОИСК REMOTES (С фиксом поиска Cash)
+-- // 1. ТВОЙ ПОИСК REMOTES (БЕЗ ИЗМЕНЕНИЙ)
 task.spawn(function()
     while not SpawnTower or not UpgradeTower do
-        for _,v in ipairs(ReplicatedStorage:GetDescendants()) do
+        for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
             if v.Name == "SpawnNewTower" then SpawnTower = v
             elseif v.Name == "UpgradeTower" then UpgradeTower = v
             elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then SkipWave = v
@@ -23,30 +23,41 @@ task.spawn(function()
     end
 end)
 
--- // Слоты и переменные
 local SLOTS = 3
 local currentSlot = 1
 local allMacros = {{}, {}, {}} 
 local recording, playing = false, false
 local placed = {} 
 local startTime = 0
+local autoReplay, autoPlay = false, false
 
--- // GUI (Твой дизайн)
+-- // СОХРАНЕНИЕ НАСТРОЕК
+local SETTINGS_FILE = "macro_settings_v24.json"
+local function saveSettings()
+    if writefile then writefile(SETTINGS_FILE, HttpService:JSONEncode({autoReplay = autoReplay, autoPlay = autoPlay, slot = currentSlot})) end
+end
+local function loadSettings()
+    if isfile and isfile(SETTINGS_FILE) then
+        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(SETTINGS_FILE)) end)
+        if ok and data then autoReplay = data.autoReplay; autoPlay = data.autoPlay; currentSlot = data.slot or 1 end
+    end
+end
+
+-- // GUI (ТВОЙ СТИЛЬ + КНОПКИ AUTO)
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "MacroV23_Final"
+gui.Name = "MacroV24_Final"
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 190, 0, 220) -- Чуть увеличил для доп. кнопки
-frame.Position = UDim2.new(0, 20, 0.5, -110)
+frame.Size = UDim2.new(0, 190, 0, 300) 
+frame.Position = UDim2.new(0, 20, 0.5, -150)
 frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
-frame.Active = true
-frame.Draggable = true
+frame.Active, frame.Draggable = true, true
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0,10)
 
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1,0,0,25)
-title.Text = "Macro V23"
+title.Text = "Macro V24.1"
 title.TextColor3 = Color3.new(1,1,1)
 title.BackgroundTransparency = 1
 title.Font = Enum.Font.SourceSansBold
@@ -66,26 +77,31 @@ for i = 1, SLOTS do
     b.Position = UDim2.new(0, 8 + (i-1)*60, 0, 28)
     b.BackgroundColor3 = Color3.fromRGB(40,40,40)
     b.TextColor3 = Color3.new(1,1,1)
-    b.Text = "S"..i
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
     slotBtns[i] = b
     b.MouseButton1Click:Connect(function()
-        if not recording and not playing then currentSlot = i refreshSlots() end
+        if not recording and not playing then currentSlot = i refreshSlots() saveSettings() end
     end)
 end
 
 local function makeButton(text, y, color)
     local b = Instance.new("TextButton", frame)
-    b.Size = UDim2.new(0,170,0,30)
+    b.Size = UDim2.new(0,170,0,28)
     b.Position = UDim2.new(0,10,0,y)
     b.BackgroundColor3 = color or Color3.fromRGB(40,40,40)
     b.TextColor3 = Color3.new(1,1,1)
     b.Font = Enum.Font.SourceSansBold
-    b.TextSize = 18
+    b.TextSize = 16
     b.Text = text
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
     return b
 end
+
+local recBtn = makeButton("Record", 58, Color3.fromRGB(80,30,30))
+local playBtn = makeButton("Play", 90, Color3.fromRGB(30,80,30))
+local arBtn = makeButton("Replay: OFF", 122)
+local apBtn = makeButton("AutoPlay: OFF", 154)
+local delBtn = makeButton("Delete Data", 186, Color3.fromRGB(120,20,20))
 
 local status = Instance.new("TextLabel", frame)
 status.Size = UDim2.new(1,0,0,20)
@@ -94,78 +110,17 @@ status.BackgroundTransparency = 1
 status.TextColor3 = Color3.new(1,1,1)
 status.Text = "Ready"
 
-local recBtn = makeButton("Record", 58, Color3.fromRGB(60,20,20))
-local stopBtn = makeButton("Stop & Save", 94)
-local playBtn = makeButton("Play", 130, Color3.fromRGB(20,60,20))
-local delBtn = makeButton("Delete Slot", 166, Color3.fromRGB(100,20,20))
+local function updateToggles()
+    arBtn.Text = "Replay: " .. (autoReplay and "ON" or "OFF")
+    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(0,120,0) or Color3.fromRGB(40,40,40)
+    apBtn.Text = "AutoPlay: " .. (autoPlay and "ON" or "OFF")
+    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(0,120,0) or Color3.fromRGB(40,40,40)
+    recBtn.Text = recording and "STOP & SAVE" or "Record"
+end
 
--- // ЛОГИКА ЗАПИСИ (ХУКИ) - ТУТ ГЛАВНЫЙ ИСПРАВЛЕННЫЙ БЛОК
-local old; old = hookmetamethod(game, "__namecall", function(self, ...)
-    local args = {...}
-    local method = getnamecallmethod()
-
-    if not checkcaller() and recording then
-        if self == SpawnTower and method == "InvokeServer" then
-            local res = old(self, ...)
-            local idx = #placed + 1
-            placed[idx] = res -- Сохраняем ссылку
-            local cf = args[2]
-            table.insert(allMacros[currentSlot], {
-                action = "spawn", index = idx, id = tostring(args[1]),
-                x = cf.Position.X, y = cf.Position.Y, z = cf.Position.Z,
-                t = os.clock() - startTime
-            })
-            return res
-        elseif self == UpgradeTower and method == "InvokeServer" then
-            local tower = args[1]
-            local foundIdx = nil
-            -- Ищем по ссылке
-            for i, v in pairs(placed) do if v == tower then foundIdx = i break end end
-            -- Если ссылка изменилась (апгрейд выше 2 уровня), ищем по позиции
-            if not foundIdx and tower.PrimaryPart then
-                local p = tower.PrimaryPart.Position
-                for i, step in ipairs(allMacros[currentSlot]) do
-                    if step.action == "spawn" and (Vector3.new(step.x, step.y, step.z) - p).Magnitude < 2 then
-                        foundIdx = step.index
-                        placed[foundIdx] = tower -- Обновляем ссылку на новую модель
-                        break
-                    end
-                end
-            end
-            if foundIdx then
-                table.insert(allMacros[currentSlot], {action="upgrade", index=foundIdx, t=os.clock()-startTime})
-            end
-        elseif (self == SkipWave or self == AutoSkip) and (method == "InvokeServer" or method == "FireServer") then
-            local act = (self == AutoSkip) and "autoskip" or "skip"
-            table.insert(allMacros[currentSlot], {action=act, value=args[1], t=os.clock()-startTime})
-        end
-    end
-    return old(self, ...)
-end)
-
--- // КНОПКИ
-recBtn.MouseButton1Click:Connect(function()
-    allMacros[currentSlot], placed, startTime, recording = {}, {}, os.clock(), true
-    status.Text = "Recording..."
-end)
-
-stopBtn.MouseButton1Click:Connect(function()
-    recording = false
-    writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot]))
-    refreshSlots()
-    status.Text = "Saved Slot "..currentSlot
-end)
-
-delBtn.MouseButton1Click:Connect(function()
-    allMacros[currentSlot] = {}
-    local f = "macro_s"..currentSlot..".json"
-    if isfile(f) then delfile(f) end
-    refreshSlots()
-    status.Text = "Deleted Slot "..currentSlot
-end)
-
-playBtn.MouseButton1Click:Connect(function()
-    if #allMacros[currentSlot] == 0 then return end
+-- // 2. ПЛЕЕР С ФИКСОМ АПГРЕЙДА (V20+)
+local function doPlay()
+    if #allMacros[currentSlot] == 0 or playing then return end
     playing = true
     status.Text = "Playing..."
     task.spawn(function()
@@ -180,7 +135,6 @@ playBtn.MouseButton1Click:Connect(function()
                 if ok then built[step.index] = tower end
             elseif step.action == "upgrade" then
                 local tower = built[step.index]
-                -- ФИКС: Если модель заменилась, ищем по координатам
                 if not tower or not tower.Parent then
                     for _, v in pairs(workspace:FindFirstChild("Towers", true):GetChildren()) do
                         local p = v.PrimaryPart or v:FindFirstChild("HumanoidRootPart")
@@ -189,23 +143,105 @@ playBtn.MouseButton1Click:Connect(function()
                         end
                     end
                 end
-                if tower then 
-                    local ok, res = pcall(function() return UpgradeTower:InvokeServer(tower) end)
-                    if ok and typeof(res) == "Instance" then built[step.index] = res end
-                end
+                if tower then pcall(function() local res = UpgradeTower:InvokeServer(tower) if typeof(res) == "Instance" then built[step.index] = res end end) end
             elseif step.action == "skip" or step.action == "autoskip" then
                 local rem = (step.action == "skip") and SkipWave or AutoSkip
-                pcall(function() if rem:IsA("RemoteFunction") then rem:InvokeServer(step.value) else rem:FireServer(step.value) end end)
+                pcall(function() 
+                    if rem:IsA("RemoteFunction") then rem:InvokeServer(step.value) else rem:FireServer(step.value) end 
+                end)
             end
         end
         playing = false
         status.Text = "Finished"
     end)
+end
+
+-- // 3. ХУКИ (ЗАПИСЬ С ФИКСОМ ПОЗИТИЦИИ)
+local old; old = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    local method = getnamecallmethod()
+    if not checkcaller() and recording then
+        if self == SpawnTower and method == "InvokeServer" then
+            local res = old(self, ...)
+            local idx = #placed + 1
+            placed[idx] = res
+            local cf = args[2]
+            table.insert(allMacros[currentSlot], {action="spawn", index=idx, id=tostring(args[1]), x=cf.Position.X, y=cf.Position.Y, z=cf.Position.Z, t=os.clock()-startTime})
+            return res
+        elseif self == UpgradeTower and method == "InvokeServer" then
+            local tower = args[1]
+            local foundIdx = nil
+            for i, v in pairs(placed) do if v == tower then foundIdx = i break end end
+            if not foundIdx and tower.PrimaryPart then
+                for i, step in ipairs(allMacros[currentSlot]) do
+                    if step.action == "spawn" and (Vector3.new(step.x, step.y, step.z) - tower.PrimaryPart.Position).Magnitude < 2 then
+                        foundIdx = step.index; placed[foundIdx] = tower; break
+                    end
+                end
+            end
+            if foundIdx then table.insert(allMacros[currentSlot], {action="upgrade", index=foundIdx, t=os.clock()-startTime}) end
+        elseif (self == SkipWave or self == AutoSkip) and (method == "InvokeServer" or method == "FireServer") then
+            table.insert(allMacros[currentSlot], {action=(self == AutoSkip and "autoskip" or "skip"), value=args[1], t=os.clock()-startTime})
+        end
+    end
+    return old(self, ...)
 end)
 
--- Загрузка при старте
+-- // 4. КНОПКИ И ЦИКЛЫ
+recBtn.MouseButton1Click:Connect(function()
+    if not recording then
+        allMacros[currentSlot], placed, startTime, recording = {}, {}, os.clock(), true
+    else
+        recording = false
+        writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot]))
+    end
+    updateToggles()
+    refreshSlots()
+end)
+
+playBtn.MouseButton1Click:Connect(doPlay)
+
+arBtn.MouseButton1Click:Connect(function() 
+    autoReplay = not autoReplay 
+    saveSettings() 
+    updateToggles() 
+end)
+
+apBtn.MouseButton1Click:Connect(function() 
+    autoPlay = not autoPlay 
+    saveSettings() 
+    updateToggles() 
+end)
+
+delBtn.MouseButton1Click:Connect(function()
+    allMacros[currentSlot] = {}
+    local f = "macro_s"..currentSlot..".json"
+    if isfile(f) then delfile(f) end
+    refreshSlots()
+end)
+
+-- // ИНИЦИАЛИЗАЦИЯ
+loadSettings()
+updateToggles()
 for i = 1, SLOTS do
     local f = "macro_s"..i..".json"
     if isfile(f) then allMacros[i] = HttpService:JSONDecode(readfile(f)) end
 end
 refreshSlots()
+
+if autoPlay then task.delay(5, doPlay) end
+
+-- // ТВОЙ ЦИКЛ AUTO REPLAY (БЕЗ ИЗМЕНЕНИЙ)
+task.spawn(function()
+    while task.wait(3) do
+        if autoReplay and not recording and not playing then
+            local rb = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true)
+            if rb and rb.Visible then 
+                pcall(function() 
+                    for _, c in ipairs(getconnections(rb.MouseButton1Click)) do c:Fire() end 
+                    for _, c in ipairs(getconnections(rb.Activated)) do c:Fire() end
+                end)
+            end
+        end
+    end
+end)

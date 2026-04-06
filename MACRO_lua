@@ -12,25 +12,32 @@ local SpawnTower, UpgradeTower, SkipWave, AutoSkip, MoneyValue, RemoteReplay
 task.spawn(function()
     while not SpawnTower or not UpgradeTower or not SkipWave do
         for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
-            local n = v.Name:lower()
-
-            if not SpawnTower and (n == "spawnnewtower" or n == "placetower") then
+            if v.Name == "SpawnNewTower" or v.Name == "PlaceTower" then
                 SpawnTower = v
 
-            elseif not UpgradeTower and n == "upgradetower" then
+            elseif v.Name == "UpgradeTower" then
                 UpgradeTower = v
 
-            elseif not SkipWave and (n == "skipwave" or n == "voteskip" or n == "skip") then
+            elseif v.Name == "SkipWave" or v.Name == "VoteSkip" then
                 SkipWave = v
 
-            elseif not AutoSkip and (n:find("autoskip") or n:find("toggleskip") or n:find("votemode")) then
+            elseif v.Name == "AutoSkip" or v.Name == "ToggleAutoSkip" then
                 AutoSkip = v
             end
         end
+
+        pcall(function()
+            MoneyValue = Players.LocalPlayer
+                :WaitForChild("PlayerGui")
+                :WaitForChild("HUD")
+                :WaitForChild("Main")
+                :WaitForChild("Top")
+                :WaitForChild("Cash")
+        end)
+
         task.wait(1)
     end
-end)
-
+end) 
 local SLOTS = 3
 local currentSlot = 1
 local allMacros = {{}, {}, {}}

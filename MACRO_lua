@@ -6,7 +6,7 @@ local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local SpawnTower, UpgradeTower, SkipWave, AutoSkip, MoneyValue
 
--- // 1. ПОИСК REMOTES
+-- // 1. ПОИСК REMOTES (БЕЗ ИЗМЕНЕНИЙ)
 task.spawn(function()
     while not SpawnTower or not UpgradeTower do
         for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
@@ -32,7 +32,7 @@ local startTime = 0
 local autoReplay, autoPlay = false, false
 
 -- // СОХРАНЕНИЕ
-local SETTINGS_FILE = "macro_settings_v24.json"
+local SETTINGS_FILE = "macro_settings_v25.json"
 local function saveSettings()
     if writefile then writefile(SETTINGS_FILE, HttpService:JSONEncode({autoReplay = autoReplay, autoPlay = autoPlay, slot = currentSlot})) end
 end
@@ -45,7 +45,7 @@ end
 
 -- // GUI
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "MacroV24_4"
+gui.Name = "MacroV25_NoBugs"
 gui.ResetOnSpawn = false
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 300) 
@@ -56,7 +56,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,10)
 
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1,0,0,25)
-title.Text = "Macro V24.4"
+title.Text = "Macro V25 (STABLE)"
 title.TextColor3 = Color3.new(1,1,1)
 title.BackgroundTransparency = 1
 title.Font = Enum.Font.SourceSansBold
@@ -121,7 +121,7 @@ local function updateToggles()
     recBtn.Text = recording and "STOP & SAVE" or "Record"
 end
 
--- // ПОИСК ПО КООРДИНАТАМ
+-- // ПОИСК ПО КООРДИНАТАМ (БЕЗ ИЗМЕНЕНИЙ)
 local function findTowerAtPos(x, y, z)
     local targetPos = Vector3.new(x, y, z)
     local towersFolder = workspace:FindFirstChild("Towers", true)
@@ -133,7 +133,7 @@ local function findTowerAtPos(x, y, z)
     return nil
 end
 
--- // ПЛЕЕР
+-- // ПЛЕЕР (БЕЗ ИЗМЕНЕНИЙ)
 local function doPlay()
     if #allMacros[currentSlot] == 0 or playing then return end
     playing = true
@@ -172,7 +172,7 @@ local function doPlay()
     end)
 end
 
--- // ХУКИ (ЗАПИСЬ)
+-- // ХУКИ (БЕЗ ИЗМЕНЕНИЙ)
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     local method = getnamecallmethod()
@@ -206,7 +206,7 @@ local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     return old(self, ...)
 end)
 
--- // КНОПКИ
+-- // КНОПКИ (БЕЗ ИЗМЕНЕНИЙ)
 recBtn.MouseButton1Click:Connect(function()
     if not recording then
         allMacros[currentSlot] = {}
@@ -248,24 +248,51 @@ refreshSlots()
 
 if autoPlay then task.delay(5, doPlay) end
 
--- // ВОТ ТУТ ЕДИНСТВЕННОЕ ИЗМЕНЕНИЕ: АВТО-СОХРАНЕНИЕ И АВТО-РЕПЛЕЙ
+-- =========================================================================
+-- // ТОТ САМЫЙ ФИКС: ПРОВЕРКА РЕАЛЬНОЙ ВИДИМОСТИ КНОПКИ
+-- =========================================================================
+
+-- Функция, которая проверяет, что кнопка и ВСЕ её родители реально включены на экране
+local function isActuallyVisible(gui)
+    if not gui then return false end
+    local current = gui
+    while current do
+        if current:IsA("GuiObject") and not current.Visible then return false end
+        if current:IsA("ScreenGui") and not current.Enabled then return false end
+        current = current.Parent
+    end
+    return true
+end
+
+-- Безопасный поиск кнопки Play Again
+local function findReplayButton()
+    for _, v in ipairs(lp.PlayerGui:GetDescendants()) do
+        if (v:IsA("TextButton") or v:IsA("ImageButton")) and (v.Name == "Play Again" or v.Name == "Replay") then
+            if isActuallyVisible(v) then
+                return v
+            end
+        end
+    end
+    return nil
+end
+
 task.spawn(function()
-    while task.wait(1) do -- Уменьшил таймаут до 1 сек, чтобы быстрее ловил окно
-        local rb = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true)
+    while task.wait(0.5) do -- Ускорил проверку до 0.5 секунд, чтобы не пропустить твой клик
+        local success, rb = pcall(findReplayButton)
         
-        if rb and rb.Visible then
-            -- 1. Если шла запись макроса — сначала СОХРАНЯЕМ
+        if success and rb then
+            -- 1. Если кнопка РЕАЛЬНО появилась и мы пишем макрос — СОХРАНЯЕМ
             if recording then
                 recording = false
-                if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
                 pcall(function()
+                    if writefile then writefile("macro_s"..currentSlot..".json", HttpService:JSONEncode(allMacros[currentSlot])) end
                     status.Text = "Saved S"..currentSlot
                     updateToggles()
                     refreshSlots()
                 end)
             end
             
-            -- 2. Затем (если включен авто-реплей) — НАЖИМАЕМ КНОПКУ
+            -- 2. Если включен авто-реплей и мы не воспроизводим макрос — НАЖИМАЕМ
             if autoReplay and not playing then
                 pcall(function() 
                     for _, c in ipairs(getconnections(rb.MouseButton1Click)) do c:Fire() end 

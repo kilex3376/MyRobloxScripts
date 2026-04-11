@@ -206,4 +206,4 @@ apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay saveAll() ref
 delBtn.MouseButton1Click:Connect(function() allMacros[currentSlot] = {} saveAll() updateUI() end)
 
 loadAll() updateUI() refreshToggles()
-if autoPlay then task.spawn(function() task.wait(10) runMacro() end) end
+if autoPlay then task.spawn(function() task.wait(5) runMacro() end) end

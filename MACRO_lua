@@ -19,12 +19,11 @@ findRemotes()
 
 local SLOTS = 3
 local currentSlot = 1
-local allMacros = {{}, {}, {}}
+local allMacros = {{}, {}, {}} 
 local recording, playing = false, false
 local startTime = 0
 local autoReplay, autoPlay = false, false
 
--- // ФАЙЛ С ЗАПИСЯМИ (Совместим с v27)
 local SETTINGS_FILE = "macro_v27_final_fix.json"
 
 local function saveAll()
@@ -46,13 +45,13 @@ local function loadAll()
 end
 loadAll()
 
--- // ИНТЕРФЕЙС
+-- // GUI (КЛАССИКА)
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "Macro_v27_4_Bulletproof"
+gui.Name = "Macro_v27_5_Stable"
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 190, 0, 310)
+frame.Size = UDim2.new(0, 190, 0, 310) 
 frame.Position = UDim2.new(0, 20, 0.5, -150)
 frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
 frame.Active, frame.Draggable = true, true
@@ -115,53 +114,32 @@ local function refreshToggles()
     recBtn.Text = recording and "STOP & SAVE" or "RECORD"
 end
 
--- // AUTO-REPLAY SCANNER
-local replayScannerActive = false
-
-local function startReplayScanner()
-    if replayScannerActive then return end
-    replayScannerActive = true
-    status.Text = "Waiting for Play Again..."
-
-    task.spawn(function()
-        while replayScannerActive and autoReplay do
-            for _, v in pairs(lp.PlayerGui:GetDescendants()) do
-                if (v:IsA("TextButton") or v:IsA("ImageButton")) and v.Visible then
-                    local t = (v:IsA("TextButton") and v.Text or ""):lower()
-                    local n = v.Name:lower()
-                    local match = t:find("again") or t:find("retry") or t:find("replay")
-                                  or n:find("again") or n:find("retry") or n:find("replay")
-                    if match then
-                        local fired = false
-                        pcall(function()
-                            local conns = getconnections(v.MouseButton1Click)
-                            if conns and #conns > 0 then
-                                for _, c in ipairs(conns) do c:Fire() end
-                                fired = true
-                            end
-                        end)
-                        if not fired then
-                            pcall(function()
-                                local pos = v.AbsolutePosition
-                                local sz  = v.AbsoluteSize
-                                VIM:SendMouseButtonEvent(pos.X + sz.X / 2, pos.Y + sz.Y / 2 + 55, 0, true,  game, 1)
-                                task.wait(0.1)
-                                VIM:SendMouseButtonEvent(pos.X + sz.X / 2, pos.Y + sz.Y / 2 + 55, 0, false, game, 1)
-                            end)
-                        end
-                        status.Text = "Replay Clicked!"
-                        replayScannerActive = false
-                        return
-                    end
-                end
-            end
-            task.wait(1)
+-- // НОВЫЙ БЕЗОПАСНЫЙ РЕПЛЕЙ (НЕ ЛОМАЕТ МАКРОС)
+local function tryClickReplay()
+    for _, v in pairs(lp.PlayerGui:GetDescendants()) do
+        if v:IsA("TextButton") and v.Visible and (v.Text:lower():find("again") or v.Name:lower():find("retry") or v.Text:lower():find("replay")) then
+            pcall(function()
+                local pos = v.AbsolutePosition
+                local sz = v.AbsoluteSize
+                VIM:SendMouseButtonEvent(pos.X + sz.X/2, pos.Y + sz.Y/2 + 55, 0, true, game, 1)
+                task.wait(0.1)
+                VIM:SendMouseButtonEvent(pos.X + sz.X/2, pos.Y + sz.Y/2 + 55, 0, false, game, 1)
+            end)
+            return true
         end
-        replayScannerActive = false
-    end)
+    end
+    return false
 end
 
--- // ХУКИ ЗАПИСИ
+task.spawn(function()
+    while task.wait(2) do
+        if autoReplay and not playing and not recording then
+            tryClickReplay()
+        end
+    end
+end)
+
+-- // ХУКИ (РАБОЧИЕ)
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     local method = getnamecallmethod()
@@ -181,74 +159,43 @@ local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     return old(self, ...)
 end)
 
--- // ПОИСК БАШНИ
 local function findTower(x, y, z)
     local p = Vector3.new(x, y, z)
     for _, v in pairs(workspace:GetDescendants()) do
-        if v:IsA("Model") and v.PrimaryPart and (v.PrimaryPart.Position - p).Magnitude < 2 then return v end
+        if v:IsA("Model") and v.PrimaryPart and (v.PrimaryPart.Position - p).Magnitude < 2.5 then return v end
     end
 end
 
--- // ВОСПРОИЗВЕДЕНИЕ С RETRY-ЛОГИКОЙ
+-- // ПЛЕЕР (ВЕРНУЛ СТАБИЛЬНУЮ ЛОГИКУ)
 local function runMacro()
     if #allMacros[currentSlot] == 0 or playing then return end
     playing = true
-    replayScannerActive = false 
     local start = os.clock()
     status.Text = "Playing..."
 
     task.spawn(function()
         for _, s in ipairs(allMacros[currentSlot]) do
             if not playing then break end
-
             while (os.clock() - start) < s.t do task.wait() end
-
-            if s.action == "spawn" then
-                local success = false
-                while playing and not success do
-                    local ok, result = pcall(function()
-                        return SpawnTower:InvokeServer(s.id, CFrame.new(s.x, s.y, s.z))
-                    end)
-                    if ok and result ~= false and result ~= nil then
-                        success = true
-                    else
-                        status.Text = "Waiting money: Spawn"
-                        task.wait(0.5)
-                    end
-                end
-            elseif s.action == "upgrade" then
-                local success = false
-                while playing and not success do
+            
+            task.wait(0.6) -- Фиксированная задержка, чтобы бабки дошли
+            
+            pcall(function()
+                if s.action == "spawn" then 
+                    SpawnTower:InvokeServer(s.id, CFrame.new(s.x, s.y, s.z))
+                elseif s.action == "upgrade" then 
                     local tw = findTower(s.x, s.y, s.z)
-                    if tw then
-                        local ok, result = pcall(function()
-                            return UpgradeTower:InvokeServer(tw)
-                        end)
-                        if ok and result ~= false and result ~= nil then
-                            success = true
-                        else
-                            status.Text = "Waiting money: Upgrade"
-                            task.wait(0.5)
-                        end
-                    else
-                        status.Text = "Searching tower..."
-                        task.wait(0.5)
-                    end
+                    if tw then UpgradeTower:InvokeServer(tw) end
+                elseif s.action == "skip" then 
+                    if s.isAuto then AutoSkip:FireServer() else SkipWave:InvokeServer() end 
                 end
-            elseif s.action == "skip" then
-                pcall(function()
-                    if s.isAuto then AutoSkip:FireServer() else SkipWave:InvokeServer() end
-                end)
-            end
+            end)
         end
-
         playing = false
-        status.Text = "Finished!"
-        if autoReplay then startReplayScanner() end
+        status.Text = "Finished"
     end)
 end
 
--- // КНОПКИ
 recBtn.MouseButton1Click:Connect(function()
     if not recording then allMacros[currentSlot] = {} startTime = os.clock() recording = true else recording = false saveAll() end
     refreshToggles() updateUI()

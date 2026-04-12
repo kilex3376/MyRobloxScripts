@@ -33,14 +33,19 @@ end
 local function loadAll()
     if isfile(SETTINGS_FILE) then
         local ok, data = pcall(function() return HttpService:JSONDecode(readfile(SETTINGS_FILE)) end)
-        if ok then autoReplay=data.autoReplay; autoPlay=data.autoPlay; currentSlot=data.currentSlot or 1; allMacros=data.macros or {{},{},{}} end
+        if ok then 
+            autoReplay=data.autoReplay or false
+            autoPlay=data.autoPlay or false
+            currentSlot=data.currentSlot or 1
+            allMacros=data.macros or {{},{},{}} 
+        end
     end
 end
 loadAll()
 
 -- // ГРАФИКА
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "Macro_V27_7_Final"
+gui.Name = "Macro_V27_8_Fixed"
 gui.ResetOnSpawn = false
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 310) 
@@ -56,11 +61,37 @@ status.TextColor3 = Color3.new(1,1,1)
 status.BackgroundTransparency = 1
 status.Text = "Ready"
 
+-- ВОЗВРАЩАЕМ СЛОТЫ
+local slotBtns = {}
+local function updateUI()
+    for i = 1, SLOTS do
+        if slotBtns[i] then
+            slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(45, 45, 45)
+            slotBtns[i].Text = "S" .. i .. " (" .. #allMacros[i] .. ")"
+        end
+    end
+    status.Text = "Slot " .. currentSlot .. (playing and " | PLAYING" or (recording and " | REC" or ""))
+end
+
+for i = 1, SLOTS do
+    local b = Instance.new("TextButton", frame)
+    b.Size = UDim2.new(0, 54, 0, 25)
+    b.Position = UDim2.new(0, 8 + (i-1)*60, 0, 10)
+    b.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Text = "S"..i
+    Instance.new("UICorner", b)
+    slotBtns[i] = b
+    b.MouseButton1Click:Connect(function()
+        if not recording and not playing then currentSlot = i updateUI() saveAll() end
+    end)
+end
+
 local function makeBtn(txt, y, color)
     local b = Instance.new("TextButton", frame)
     b.Size = UDim2.new(0,174,0,30)
     b.Position = UDim2.new(0,8,0,y)
-    b.BackgroundColor3 = color or Color3.fromRGB(45,45,45)
+    b.BackgroundColor3 = color or Color3.fromRGB(50,50,50)
     b.TextColor3 = Color3.new(1,1,1)
     b.Text = txt
     Instance.new("UICorner", b)
@@ -73,15 +104,15 @@ local arBtn = makeBtn("Auto Replay: OFF", 125)
 local apBtn = makeBtn("Auto Play: OFF", 165)
 local delBtn = makeBtn("CLEAR SLOT", 205)
 
-local function refreshUI()
+local function refreshToggles()
     arBtn.Text = "Auto Replay: " .. (autoReplay and "ON" or "OFF")
-    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(0,120,0) or Color3.fromRGB(45,45,45)
+    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(0,120,0) or Color3.fromRGB(50,50,50)
     apBtn.Text = "Auto Play: " .. (autoPlay and "ON" or "OFF")
-    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(0,120,0) or Color3.fromRGB(45,45,45)
-    status.Text = "Slot " .. currentSlot .. (playing and " | PLAYING" or "")
+    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(0,120,0) or Color3.fromRGB(50,50,50)
+    updateUI()
 end
 
--- // ФУНКЦИЯ КЛИКА
+-- // КЛИК И АНТИ-АФК
 local function forceClick(v)
     if not v then return end
     pcall(function()
@@ -90,17 +121,16 @@ local function forceClick(v)
         VIM:SendMouseButtonEvent(pos.X + sz.X/2, pos.Y + sz.Y/2 + 55, 0, true, game, 1)
         task.wait(0.1)
         VIM:SendMouseButtonEvent(pos.X + sz.X/2, pos.Y + sz.Y/2 + 55, 0, false, game, 1)
-        -- Доп. метод через связи
         local conns = getconnections(v.MouseButton1Click)
         for _, c in ipairs(conns) do c:Fire() end
     end)
 end
 
--- // ПЛЕЕР (Твой метод с built[index])
+-- // ПЛЕЕР
 local function doPlay()
     if playing or #allMacros[currentSlot] == 0 then return end
     playing = true
-    refreshUI()
+    updateUI()
     
     task.spawn(function()
         local built = {}
@@ -124,11 +154,11 @@ local function doPlay()
             end
         end
         playing = false
-        refreshUI()
+        updateUI()
     end)
 end
 
--- // СКАНЕР КНОПКИ (ДЛЯ АФК)
+-- // СКАНЕР
 task.spawn(function()
     while task.wait(3) do
         if autoReplay and not playing and not recording then
@@ -142,15 +172,13 @@ task.spawn(function()
                 end
             end
         end
-        -- Авто-старт (если зашел в катку)
         if autoPlay and not playing and not recording and #allMacros[currentSlot] > 0 then
-            -- Проверяем, что мы в матче (Remotes найдены)
             if SpawnTower then doPlay() end
         end
     end
 end)
 
--- // ХУК ЗАПИСИ (Твой рабочий)
+-- // ХУК ЗАПИСИ
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     local method = getnamecallmethod()
@@ -161,10 +189,9 @@ local old; old = hookmetamethod(game, "__namecall", function(self, ...)
             table.insert(allMacros[currentSlot], {action="spawn", index=#allMacros[currentSlot]+1, id=tostring(args[1]), x=args[2].Position.X, y=args[2].Position.Y, z=args[2].Position.Z, t=t})
             return res
         elseif self == UpgradeTower then
-            -- Ищем индекс башни для апгрейда
             local tower = args[1]
             for i, step in ipairs(allMacros[currentSlot]) do
-                if step.action == "spawn" and (Vector3.new(step.x, step.y, step.z) - tower.PrimaryPart.Position).Magnitude < 2 then
+                if step.action == "spawn" and tower.PrimaryPart and (Vector3.new(step.x, step.y, step.z) - tower.PrimaryPart.Position).Magnitude < 2 then
                     table.insert(allMacros[currentSlot], {action="upgrade", index=step.index, t=t})
                     break
                 end
@@ -178,11 +205,12 @@ end)
 
 recBtn.MouseButton1Click:Connect(function()
     if not recording then allMacros[currentSlot] = {} startTime = os.clock() recording = true else recording = false saveAll() end
-    refreshUI()
+    updateUI()
 end)
 playBtn.MouseButton1Click:Connect(doPlay)
-arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay saveAll() refreshUI() end)
-apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay saveAll() refreshUI() end)
-delBtn.MouseButton1Click:Connect(function() allMacros[currentSlot] = {} saveAll() refreshUI() end)
+arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay saveAll() refreshToggles() end)
+apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay saveAll() refreshToggles() end)
+delBtn.MouseButton1Click:Connect(function() allMacros[currentSlot] = {} saveAll() updateUI() end)
 
-refreshUI()
+updateUI()
+refreshToggles()

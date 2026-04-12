@@ -24,8 +24,9 @@ local recording, playing = false, false
 local startTime = 0
 local autoReplay, autoPlay = false, false
 
--- // СОХРАНЕНИЕ
+-- // ИСПОЛЬЗУЕМ ТВОЙ СТАРЫЙ JSON
 local SETTINGS_FILE = "macro_v27_final_fix.json"
+
 local function saveAll()
     writefile(SETTINGS_FILE, HttpService:JSONEncode({
         autoReplay = autoReplay, autoPlay = autoPlay, currentSlot = currentSlot, macros = allMacros
@@ -47,15 +48,14 @@ loadAll()
 
 -- // ГРАФИКА
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "Macro_Fix_v27_2"
+gui.Name = "Macro_Fix_v27_3_Final"
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 310) 
 frame.Position = UDim2.new(0, 20, 0.5, -150)
-frame.BackgroundColor3 = Color3.fromRGB(20,20,20)
-frame.Active = true
-frame.Draggable = true
+frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
+frame.Active, frame.Draggable = true, true
 Instance.new("UICorner", frame)
 
 local status = Instance.new("TextLabel", frame)
@@ -69,7 +69,7 @@ local slotBtns = {}
 local function updateUI()
     for i = 1, SLOTS do
         if slotBtns[i] then
-            slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(40, 40, 40)
+            slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(45, 45, 45)
             slotBtns[i].Text = "S" .. i .. " (" .. #allMacros[i] .. ")"
         end
     end
@@ -80,7 +80,7 @@ for i = 1, SLOTS do
     local b = Instance.new("TextButton", frame)
     b.Size = UDim2.new(0, 54, 0, 25)
     b.Position = UDim2.new(0, 8 + (i-1)*60, 0, 10)
-    b.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    b.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
     b.TextColor3 = Color3.new(1,1,1)
     b.Text = "S"..i
     Instance.new("UICorner", b)
@@ -94,45 +94,51 @@ local function makeBtn(txt, y, color)
     local b = Instance.new("TextButton", frame)
     b.Size = UDim2.new(0,174,0,30)
     b.Position = UDim2.new(0,8,0,y)
-    b.BackgroundColor3 = color or Color3.fromRGB(45,45,45)
+    b.BackgroundColor3 = color or Color3.fromRGB(50,50,50)
     b.TextColor3 = Color3.new(1,1,1)
     b.Text = txt
     Instance.new("UICorner", b)
     return b
 end
 
-local recBtn = makeBtn("RECORD", 45, Color3.fromRGB(120,40,40))
-local playBtn = makeBtn("PLAY", 85, Color3.fromRGB(40,120,40))
+local recBtn = makeBtn("RECORD", 45, Color3.fromRGB(130,40,40))
+local playBtn = makeBtn("PLAY", 85, Color3.fromRGB(40,130,40))
 local arBtn = makeBtn("Auto Replay: OFF", 125)
 local apBtn = makeBtn("Auto Play: OFF", 165)
-local delBtn = makeBtn("CLEAR DATA", 205, Color3.fromRGB(60,60,60))
+local delBtn = makeBtn("CLEAR SLOT", 205, Color3.fromRGB(70,70,70))
 
 local function refreshToggles()
     arBtn.Text = "Auto Replay: " .. (autoReplay and "ON" or "OFF")
-    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(0,180,0) or Color3.fromRGB(45,45,45)
+    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(0,180,0) or Color3.fromRGB(50,50,50)
     apBtn.Text = "Auto Play: " .. (autoPlay and "ON" or "OFF")
-    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(0,180,0) or Color3.fromRGB(45,45,45)
+    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(0,180,0) or Color3.fromRGB(50,50,50)
     recBtn.Text = recording and "STOP & SAVE" or "RECORD"
 end
 
--- // ПОИСК КНОПКИ ПЕРЕЗАХОДА
+-- // УЛУЧШЕННЫЙ КЛИКЕР PLAY AGAIN
 local function clickPlayAgain()
+    local found = false
     for _, v in pairs(lp.PlayerGui:GetDescendants()) do
-        if v:IsA("TextButton") and v.Visible and (v.Text:lower():find("play") or v.Text:lower():find("retry") or v.Name:lower():find("retry")) then
-            pcall(function()
-                local cp = v.AbsolutePosition
-                local cs = v.AbsoluteSize
-                VIM:SendMouseButtonEvent(cp.X + cs.X/2, cp.Y + cs.Y/2 + 50, 0, true, game, 1)
-                task.wait(0.1)
-                VIM:SendMouseButtonEvent(cp.X + cs.X/2, cp.Y + cs.Y/2 + 50, 0, false, game, 1)
-            end)
-            return true
+        if v:IsA("TextButton") and v.Visible then
+            local text = v.Text:lower()
+            -- Проверяем текст кнопки или её имя
+            if text:find("again") or text:find("retry") or text:find("replay") or v.Name:lower():find("retry") then
+                pcall(function()
+                    local pos = v.AbsolutePosition
+                    local size = v.AbsoluteSize
+                    -- Клик с небольшим офсетом (для мобилок)
+                    VIM:SendMouseButtonEvent(pos.X + size.X/2, pos.Y + size.Y/2 + 55, 0, true, game, 1)
+                    task.wait(0.1)
+                    VIM:SendMouseButtonEvent(pos.X + size.X/2, pos.Y + size.Y/2 + 55, 0, false, game, 1)
+                    found = true
+                end)
+            end
         end
     end
-    return false
+    return found
 end
 
--- // ЛОГИКА ЗАПИСИ
+-- // ЗАПИСЬ
 local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     local method = getnamecallmethod()
@@ -152,7 +158,7 @@ local old; old = hookmetamethod(game, "__namecall", function(self, ...)
     return old(self, ...)
 end)
 
--- // ВОСПРОИЗВЕДЕНИЕ (С ЗАДЕРЖКОЙ И ПОВТОРОМ)
+-- // ВОСПРОИЗВЕДЕНИЕ
 local function findTower(x, y, z)
     local p = Vector3.new(x, y, z)
     for _, v in pairs(workspace:GetDescendants()) do
@@ -168,12 +174,9 @@ local function runMacro()
         for _, s in ipairs(allMacros[currentSlot]) do
             if not playing then break end
             while (os.clock() - start) < s.t do task.wait() end
-            
-            task.wait(0.5) -- ЖЕСТКАЯ ЗАДЕРЖКА ЧТОБЫ УСПЕЛИ ПРИЙТИ ДЕНЬГИ
-            
+            task.wait(0.6) -- Задержка для прихода денег
             pcall(function()
-                if s.action == "spawn" then 
-                    SpawnTower:InvokeServer(s.id, CFrame.new(s.x, s.y, s.z))
+                if s.action == "spawn" then SpawnTower:InvokeServer(s.id, CFrame.new(s.x, s.y, s.z))
                 elseif s.action == "upgrade" then 
                     local tw = findTower(s.x, s.y, s.z)
                     if tw then UpgradeTower:InvokeServer(tw) end
@@ -187,7 +190,10 @@ local function runMacro()
         
         if autoReplay then
             while autoReplay do
-                if clickPlayAgain() then break end
+                if clickPlayAgain() then 
+                    status.Text = "Replay Clicked!"
+                    break 
+                end
                 task.wait(2)
             end
         end
@@ -206,4 +212,4 @@ apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay saveAll() ref
 delBtn.MouseButton1Click:Connect(function() allMacros[currentSlot] = {} saveAll() updateUI() end)
 
 loadAll() updateUI() refreshToggles()
-if autoPlay then task.spawn(function() task.wait(5) runMacro() end) end
+if autoPlay then task.spawn(function() task.wait(10) runMacro() end) end

@@ -9,7 +9,7 @@ local allMacros = {{}, {}, {}}
 local recording, playing = false, false
 local startTime = 0
 local autoReplay, autoPlay = false, false
-local SETTINGS_FILE = "macro_v29_11.json"
+local SETTINGS_FILE = "macro_v29_12.json"
 
 -- // СОХРАНЕНИЕ
 local function saveAll()
@@ -34,9 +34,9 @@ if isfile(SETTINGS_FILE) then
     end)
 end
 
--- // GUI
+-- // GUI (v29.12)
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "Macro_V29_11"
+gui.Name = "Macro_V29_12"
 gui.ResetOnSpawn = false
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 340) 
@@ -101,13 +101,14 @@ local oldNC; oldNC = hookmetamethod(game, "__namecall", function(self, ...)
     if recording and not checkcaller() then
         if self:IsA("RemoteFunction") or self:IsA("RemoteEvent") then
             local n = self.Name:lower()
+            -- Жесткий фильтр мусора
             if not n:find("move") and not n:find("heartbeat") and n ~= "saymessagerequest" then
                 table.insert(allMacros[currentSlot], {
                     name = self.Name,
                     args = args,
                     t = os.clock() - startTime
                 })
-                if os.clock() - lastUpdate > 0.5 then
+                if os.clock() - lastUpdate > 0.4 then
                     lastUpdate = os.clock()
                     task.spawn(updateUI)
                 end
@@ -140,20 +141,23 @@ local function doPlay()
     end)
 end
 
--- // ЛОГИКА АВТО-РЕПЛЕЯ И СОХРАНЕНИЯ (ТВОЯ)
+-- // ИСПРАВЛЕННАЯ ЛОГИКА РЕПЛЕЯ (БЕЗ ФАЛЬШ-СТАРТОВ)
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(1.5) do
+        -- Проверка: кнопка должна быть не просто в памяти, а ВИДИМА
         local rb = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true) or lp.PlayerGui:FindFirstChild("Retry", true)
         
-        if rb and rb.Visible then
-            if recording then
+        if rb and rb.Visible and rb.AbsoluteSize.X > 0 then
+            -- Если мы записывали и увидели кнопку — СТОП и СОХРАНИТЬ
+            if recording and (os.clock() - startTime > 5) then -- Защита: не сохранять, если запись шла меньше 5 сек
                 recording = false
                 saveAll()
                 status.Text = "Saved S"..currentSlot
                 updateUI()
             end
             
-            if autoReplay and not playing then
+            -- Авто-клик
+            if autoReplay and not playing and not recording then
                 pcall(function()
                     for _, c in ipairs(getconnections(rb.MouseButton1Click)) do c:Fire() end
                     for _, c in ipairs(getconnections(rb.Activated)) do c:Fire() end
@@ -163,7 +167,7 @@ task.spawn(function()
     end
 end)
 
--- // КЛИКИ
+-- // КНОПКИ
 recBtn.MouseButton1Click:Connect(function()
     if not recording then
         allMacros[currentSlot] = {}

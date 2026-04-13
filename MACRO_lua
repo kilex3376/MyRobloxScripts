@@ -22,7 +22,6 @@ local function saveAll()
             macros = allMacros
         }))
     end)
-    if not success then warn("Save failed: " .. tostring(err)) end
 end
 
 local function loadAll()
@@ -38,9 +37,9 @@ local function loadAll()
 end
 loadAll()
 
--- // GUI (Версия 29.7)
+-- // GUI
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "Macro_V29_7"
+gui.Name = "Macro_V29_7_FIXED"
 gui.ResetOnSpawn = false
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 340) 
@@ -66,31 +65,45 @@ local function updateUI()
     end
 end
 
--- [Создание кнопок пропущено для краткости, логика та же]
--- Кнопки S1, S2, S3, RECORD, PLAY, Auto Replay, Auto Play...
+-- Кнопки выбора слотов
+for i = 1, SLOTS do
+    local b = Instance.new("TextButton", frame)
+    b.Size = UDim2.new(0, 54, 0, 25)
+    b.Position = UDim2.new(0, 8 + (i-1)*60, 0, 25)
+    b.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Text = "S"..i
+    Instance.new("UICorner", b)
+    slotBtns[i] = b
+    b.MouseButton1Click:Connect(function() currentSlot = i updateUI() end)
+end
 
--- // СТРОГИЙ ХУК ЗАПИСИ
-local oldNC; oldNC = hookmetamethod(game, "__namecall", function(self, ...)
-    local args = {...}
-    if recording and not checkcaller() then
-        local t = os.clock() - startTime
-        -- Фильтруем: только если это Remote и аргументы похожи на TD-действия
-        if self:IsA("RemoteFunction") or self:IsA("RemoteEvent") then
-            -- Записываем только если это НЕ движение и НЕ чат
-            if self.Name ~= "SayMessageRequest" and not self.Name:find("Move") then
-                table.insert(allMacros[currentSlot], {
-                    action = "remote_call",
-                    name = self.Name,
-                    path = self:GetFullName(),
-                    args = args,
-                    t = t
-                })
-                task.spawn(updateUI)
-            end
-        end
-    end
-    return oldNC(self, ...)
-end)
+local function makeBtn(txt, y, color)
+    local b = Instance.new("TextButton", frame)
+    b.Size = UDim2.new(0,174,0,35)
+    b.Position = UDim2.new(0,8,0,y)
+    b.BackgroundColor3 = color or Color3.fromRGB(45,45,45)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Text = txt
+    b.Font = Enum.Font.SourceSansBold
+    b.TextSize = 14
+    Instance.new("UICorner", b)
+    return b
+end
+
+-- ВОТ ОНИ, ТВОИ КНОПКИ БЛЯТЬ:
+local recBtn = makeBtn("RECORD", 60, Color3.fromRGB(130,0,0))
+local playBtn = makeBtn("PLAY", 105, Color3.fromRGB(0,110,0))
+local arBtn = makeBtn("Auto Replay: OFF", 150)
+local apBtn = makeBtn("Auto Play: OFF", 195)
+local delBtn = makeBtn("CLEAR SLOT", 240)
+
+local function updateToggles()
+    arBtn.Text = "Auto Replay: " .. (autoReplay and "ON" or "OFF")
+    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(0,100,0) or Color3.fromRGB(45,45,45)
+    apBtn.Text = "Auto Play: " .. (autoPlay and "ON" or "OFF")
+    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(0,100,0) or Color3.fromRGB(45,45,45)
+end
 
 -- // ПЛЕЕР
 local function doPlay()
@@ -102,9 +115,8 @@ local function doPlay()
         for _, step in ipairs(allMacros[currentSlot]) do
             if not playing then break end
             while (os.clock() - start) < step.t do task.wait() end
-            
             pcall(function()
-                local remote = game:GetService("RunService"):FindFirstChild(step.name, true) or game:FindFirstChild(step.name, true)
+                local remote = game:FindFirstChild(step.name, true)
                 if remote then
                     if remote:IsA("RemoteFunction") then remote:InvokeServer(unpack(step.args))
                     else remote:FireServer(unpack(step.args)) end
@@ -116,28 +128,71 @@ local function doPlay()
     end)
 end
 
--- // ЛОГИКА КНОПКИ REPLAY
+-- // ХУК ЗАПИСИ
+local oldNC; oldNC = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    if recording and not checkcaller() then
+        if self:IsA("RemoteFunction") or self:IsA("RemoteEvent") then
+            if self.Name ~= "SayMessageRequest" and not self.Name:find("Move") then
+                table.insert(allMacros[currentSlot], {
+                    name = self.Name,
+                    args = args,
+                    t = os.clock() - startTime
+                })
+                task.spawn(updateUI)
+            end
+        end
+    end
+    return oldNC(self, ...)
+end)
+
+-- // ОБРАБОТКА КЛИКОВ КНОПОК
+recBtn.MouseButton1Click:Connect(function()
+    if not recording then
+        allMacros[currentSlot] = {}
+        startTime = os.clock()
+        recording = true
+        status.Text = "RECORDING..."
+    else
+        recording = false
+        saveAll()
+        status.Text = "READY"
+    end
+    updateUI()
+end)
+
+playBtn.MouseButton1Click:Connect(doPlay)
+
+arBtn.MouseButton1Click:Connect(function() 
+    autoReplay = not autoReplay 
+    updateToggles()
+    saveAll()
+end)
+
+apBtn.MouseButton1Click:Connect(function() 
+    autoPlay = not autoPlay 
+    updateToggles()
+    saveAll()
+end)
+
+delBtn.MouseButton1Click:Connect(function() 
+    allMacros[currentSlot] = {} 
+    updateUI() 
+    saveAll()
+end)
+
+-- // АВТОРЕПЛЕЙ ЛОГИКА
 task.spawn(function()
-    while true do
-        task.wait(1)
-        if recording then
+    while task.wait(1) do
+        if autoReplay and not playing and not recording then
             for _, v in pairs(lp.PlayerGui:GetDescendants()) do
                 if v:IsA("TextButton") and v.Visible and (v.Text:lower():find("again") or v.Name:lower():find("Retry")) then
-                    local conn; conn = v.MouseButton1Click:Connect(function()
-                        if recording then
-                            table.insert(allMacros[currentSlot], {action="replay_click", t=os.clock()-startTime})
-                            recording = false
-                            saveAll()
-                            updateUI()
-                        end
-                        conn:Disconnect()
-                    end)
-                    repeat task.wait(1) until not v.Visible or not recording
+                    for _, c in ipairs(getconnections(v.MouseButton1Click)) do c:Fire() end
                 end
             end
         end
     end
 end)
 
--- [Остальные бинды кнопок: Record, Play, Toggles]
--- При остановке записи всегда вызывай saveAll()
+updateUI()
+updateToggles()

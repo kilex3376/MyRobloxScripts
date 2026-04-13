@@ -1,6 +1,5 @@
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 
@@ -10,11 +9,11 @@ local allMacros = {{}, {}, {}}
 local recording, playing = false, false
 local startTime = 0
 local autoReplay, autoPlay = false, false
-local SETTINGS_FILE = "macro_v29_7.json"
+local SETTINGS_FILE = "macro_v29_11.json"
 
--- // СОХРАНЕНИЕ/ЗАГРУЗКА
+-- // СОХРАНЕНИЕ
 local function saveAll()
-    local success, err = pcall(function()
+    pcall(function()
         writefile(SETTINGS_FILE, HttpService:JSONEncode({
             autoReplay = autoReplay,
             autoPlay = autoPlay,
@@ -24,22 +23,20 @@ local function saveAll()
     end)
 end
 
-local function loadAll()
-    if isfile(SETTINGS_FILE) then
-        local ok, data = pcall(function() return HttpService:JSONDecode(readfile(SETTINGS_FILE)) end)
-        if ok then 
-            autoReplay = data.autoReplay or false
-            autoPlay = data.autoPlay or false
-            currentSlot = data.currentSlot or 1
-            allMacros = data.macros or {{},{},{}} 
-        end
-    end
+-- // ЗАГРУЗКА
+if isfile(SETTINGS_FILE) then
+    pcall(function()
+        local data = HttpService:JSONDecode(readfile(SETTINGS_FILE))
+        allMacros = data.macros or {{},{},{}}
+        autoReplay = data.autoReplay or false
+        autoPlay = data.autoPlay or false
+        currentSlot = data.currentSlot or 1
+    end)
 end
-loadAll()
 
 -- // GUI
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "Macro_V29_7_FIXED"
+gui.Name = "Macro_V29_11"
 gui.ResetOnSpawn = false
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 340) 
@@ -65,7 +62,6 @@ local function updateUI()
     end
 end
 
--- Кнопки выбора слотов
 for i = 1, SLOTS do
     local b = Instance.new("TextButton", frame)
     b.Size = UDim2.new(0, 54, 0, 25)
@@ -75,7 +71,9 @@ for i = 1, SLOTS do
     b.Text = "S"..i
     Instance.new("UICorner", b)
     slotBtns[i] = b
-    b.MouseButton1Click:Connect(function() currentSlot = i updateUI() end)
+    b.MouseButton1Click:Connect(function() 
+        if not recording and not playing then currentSlot = i updateUI() saveAll() end 
+    end)
 end
 
 local function makeBtn(txt, y, color)
@@ -86,24 +84,38 @@ local function makeBtn(txt, y, color)
     b.TextColor3 = Color3.new(1,1,1)
     b.Text = txt
     b.Font = Enum.Font.SourceSansBold
-    b.TextSize = 14
     Instance.new("UICorner", b)
     return b
 end
 
--- ВОТ ОНИ, ТВОИ КНОПКИ БЛЯТЬ:
-local recBtn = makeBtn("RECORD", 60, Color3.fromRGB(130,0,0))
-local playBtn = makeBtn("PLAY", 105, Color3.fromRGB(0,110,0))
+local recBtn = makeBtn("RECORD", 60, Color3.fromRGB(150,0,0))
+local playBtn = makeBtn("PLAY", 105, Color3.fromRGB(0,140,0))
 local arBtn = makeBtn("Auto Replay: OFF", 150)
 local apBtn = makeBtn("Auto Play: OFF", 195)
 local delBtn = makeBtn("CLEAR SLOT", 240)
 
-local function updateToggles()
-    arBtn.Text = "Auto Replay: " .. (autoReplay and "ON" or "OFF")
-    arBtn.BackgroundColor3 = autoReplay and Color3.fromRGB(0,100,0) or Color3.fromRGB(45,45,45)
-    apBtn.Text = "Auto Play: " .. (autoPlay and "ON" or "OFF")
-    apBtn.BackgroundColor3 = autoPlay and Color3.fromRGB(0,100,0) or Color3.fromRGB(45,45,45)
-end
+-- // ХУК ЗАПИСИ
+local lastUpdate = 0
+local oldNC; oldNC = hookmetamethod(game, "__namecall", function(self, ...)
+    local args = {...}
+    if recording and not checkcaller() then
+        if self:IsA("RemoteFunction") or self:IsA("RemoteEvent") then
+            local n = self.Name:lower()
+            if not n:find("move") and not n:find("heartbeat") and n ~= "saymessagerequest" then
+                table.insert(allMacros[currentSlot], {
+                    name = self.Name,
+                    args = args,
+                    t = os.clock() - startTime
+                })
+                if os.clock() - lastUpdate > 0.5 then
+                    lastUpdate = os.clock()
+                    task.spawn(updateUI)
+                end
+            end
+        end
+    end
+    return oldNC(self, ...)
+end)
 
 -- // ПЛЕЕР
 local function doPlay()
@@ -124,29 +136,34 @@ local function doPlay()
             end)
         end
         playing = false
-        status.Text = "DONE"
+        status.Text = "READY"
     end)
 end
 
--- // ХУК ЗАПИСИ
-local oldNC; oldNC = hookmetamethod(game, "__namecall", function(self, ...)
-    local args = {...}
-    if recording and not checkcaller() then
-        if self:IsA("RemoteFunction") or self:IsA("RemoteEvent") then
-            if self.Name ~= "SayMessageRequest" and not self.Name:find("Move") then
-                table.insert(allMacros[currentSlot], {
-                    name = self.Name,
-                    args = args,
-                    t = os.clock() - startTime
-                })
-                task.spawn(updateUI)
+-- // ЛОГИКА АВТО-РЕПЛЕЯ И СОХРАНЕНИЯ (ТВОЯ)
+task.spawn(function()
+    while task.wait(1) do
+        local rb = lp.PlayerGui:FindFirstChild("Play Again", true) or lp.PlayerGui:FindFirstChild("Replay", true) or lp.PlayerGui:FindFirstChild("Retry", true)
+        
+        if rb and rb.Visible then
+            if recording then
+                recording = false
+                saveAll()
+                status.Text = "Saved S"..currentSlot
+                updateUI()
+            end
+            
+            if autoReplay and not playing then
+                pcall(function()
+                    for _, c in ipairs(getconnections(rb.MouseButton1Click)) do c:Fire() end
+                    for _, c in ipairs(getconnections(rb.Activated)) do c:Fire() end
+                end)
             end
         end
     end
-    return oldNC(self, ...)
 end)
 
--- // ОБРАБОТКА КЛИКОВ КНОПОК
+-- // КЛИКИ
 recBtn.MouseButton1Click:Connect(function()
     if not recording then
         allMacros[currentSlot] = {}
@@ -163,36 +180,14 @@ end)
 
 playBtn.MouseButton1Click:Connect(doPlay)
 
-arBtn.MouseButton1Click:Connect(function() 
-    autoReplay = not autoReplay 
-    updateToggles()
-    saveAll()
-end)
+local function syncToggles()
+    arBtn.Text = "Auto Replay: " .. (autoReplay and "ON" or "OFF")
+    apBtn.Text = "Auto Play: " .. (autoPlay and "ON" or "OFF")
+end
 
-apBtn.MouseButton1Click:Connect(function() 
-    autoPlay = not autoPlay 
-    updateToggles()
-    saveAll()
-end)
-
-delBtn.MouseButton1Click:Connect(function() 
-    allMacros[currentSlot] = {} 
-    updateUI() 
-    saveAll()
-end)
-
--- // АВТОРЕПЛЕЙ ЛОГИКА
-task.spawn(function()
-    while task.wait(1) do
-        if autoReplay and not playing and not recording then
-            for _, v in pairs(lp.PlayerGui:GetDescendants()) do
-                if v:IsA("TextButton") and v.Visible and (v.Text:lower():find("again") or v.Name:lower():find("Retry")) then
-                    for _, c in ipairs(getconnections(v.MouseButton1Click)) do c:Fire() end
-                end
-            end
-        end
-    end
-end)
+arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay syncToggles() saveAll() end)
+apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay syncToggles() saveAll() end)
+delBtn.MouseButton1Click:Connect(function() allMacros[currentSlot] = {} updateUI() saveAll() end)
 
 updateUI()
-updateToggles()
+syncToggles()

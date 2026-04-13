@@ -26,6 +26,11 @@ local startTime = 0
 local autoReplay, autoPlay = false, false
 local SETTINGS_FILE = "macro_v28_final.json"
 
+-- // ПРОВЕРКА МЕСТОПОЛОЖЕНИЯ
+local function isInMatch()
+    return workspace:FindFirstChild("Towers") or workspace:FindFirstChild("Enemies") or workspace:FindFirstChild("Map")
+end
+
 local function saveAll()
     writefile(SETTINGS_FILE, HttpService:JSONEncode({autoReplay=autoReplay, autoPlay=autoPlay, currentSlot=currentSlot, macros=allMacros}))
 end
@@ -45,7 +50,7 @@ loadAll()
 
 -- // GUI
 local gui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
-gui.Name = "Macro_V28_8"
+gui.Name = "Macro_V28_9"
 gui.ResetOnSpawn = false
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 190, 0, 340) 
@@ -56,9 +61,8 @@ Instance.new("UICorner", frame)
 
 local vLabel = Instance.new("TextLabel", frame)
 vLabel.Size = UDim2.new(1,0,0,20)
-vLabel.Text = "FAST-CHECK v28.8"
-vLabel.TextColor3 = Color3.fromRGB(0,255,255)
-vLabel.TextSize = 12
+vLabel.Text = "ULTRA STABLE v28.9"
+vLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
 vLabel.BackgroundTransparency = 1
 
 local status = Instance.new("TextLabel", frame)
@@ -66,17 +70,20 @@ status.Size = UDim2.new(1,0,0,25)
 status.Position = UDim2.new(0,0,1,-25)
 status.TextColor3 = Color3.new(1,1,1)
 status.BackgroundTransparency = 1
-status.Text = "Ready"
 
 local slotBtns = {}
 local function updateUI()
     for i = 1, SLOTS do
         if slotBtns[i] then
-            slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(0, 100, 200) or Color3.fromRGB(30, 30, 30)
+            slotBtns[i].BackgroundColor3 = (i == currentSlot) and Color3.fromRGB(0, 120, 255) or Color3.fromRGB(30, 30, 30)
             slotBtns[i].Text = "S" .. i .. " (" .. #allMacros[i] .. ")"
         end
     end
-    status.Text = (playing and "PLAYING" or (recording and "RECORDING" or "IDLE")) .. " | SLOT " .. currentSlot
+    local txt = "IDLE"
+    if playing then txt = "PLAYING"
+    elseif recording then txt = "RECORDING"
+    elseif not isInMatch() then txt = "LOBBY" end
+    status.Text = txt .. " | SLOT " .. currentSlot
 end
 
 for i = 1, SLOTS do
@@ -121,32 +128,31 @@ end
 local function forceClick(v)
     if not v then return end
     pcall(function()
-        local pos = v.AbsolutePosition
-        local sz = v.AbsoluteSize
-        VIM:SendMouseButtonEvent(pos.X + sz.X/2, pos.Y + sz.Y/2 + 55, 0, true, game, 1)
-        task.wait(0.05)
-        VIM:SendMouseButtonEvent(pos.X + sz.X/2, pos.Y + sz.Y/2 + 55, 0, false, game, 1)
-        for _, c in ipairs(getconnections(v.MouseButton1Click)) do c:Fire() end
+        local conns = getconnections(v.MouseButton1Click)
+        for _, c in ipairs(conns) do c:Fire() end
+        local conns2 = getconnections(v.Activated)
+        for _, c in ipairs(conns2) do c:Fire() end
     end)
 end
 
 -- // ПЛЕЕР
 local function doPlay()
-    if playing or #allMacros[currentSlot] == 0 then return end
+    if playing or #allMacros[currentSlot] == 0 or not isInMatch() then return end
     playing = true
     updateUI()
     task.spawn(function()
         local built = {}
         local begin = os.clock()
+        findRemotes()
         for _, step in ipairs(allMacros[currentSlot]) do
-            if not playing then break end
+            if not playing or not isInMatch() then break end
             while os.clock() < begin + step.t do RunService.Heartbeat:Wait() end
             if step.action == "spawn" then
                 repeat
                     local ok, tower = pcall(function() return SpawnTower:InvokeServer(step.id, CFrame.new(step.x, step.y, step.z)) end)
                     if ok and tower then built[step.index] = tower break end
                     task.wait(0.5)
-                until not playing
+                until not playing or not isInMatch()
             elseif step.action == "upgrade" then
                 repeat
                     local tw = built[step.index]
@@ -155,7 +161,7 @@ local function doPlay()
                         if ok and res ~= false then break end
                     end
                     task.wait(0.5)
-                until not playing
+                until not playing or not isInMatch()
             elseif step.action == "skip" or step.action == "autoskip" then
                 pcall(function() 
                     local rem = (step.action == "skip") and SkipWave or AutoSkip
@@ -174,8 +180,8 @@ local function doPlay()
     end)
 end
 
--- // ХУК ЗАПИСИ (С МОМЕНТАЛЬНЫМ ОБНОВЛЕНИЕМ)
-local oldNamecall; oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+-- // ХУКИ
+local oldNC; oldNC = hookmetamethod(game, "__namecall", function(self, ...)
     local args = {...}
     if recording and not checkcaller() then
         local t = os.clock() - startTime
@@ -186,65 +192,56 @@ local oldNamecall; oldNamecall = hookmetamethod(game, "__namecall", function(sel
             local tower = args[1]
             for i, step in ipairs(allMacros[currentSlot]) do
                 if step.action == "spawn" and tower.PrimaryPart and (Vector3.new(step.x, step.y, step.z) - tower.PrimaryPart.Position).Magnitude < 3 then
-                    act = {action="upgrade", index=step.index, t=t}
-                    break
+                    act = {action="upgrade", index=step.index, t=t} break
                 end
             end
         elseif self == SkipWave or self == AutoSkip then
             act = {action=(self==AutoSkip and "autoskip" or "skip"), value=args[1], t=t}
         end
-        
-        if act then 
-            table.insert(allMacros[currentSlot], act)
-            task.spawn(updateUI) -- Моментально обновляем цифру в слоте
-        end
+        if act then table.insert(allMacros[currentSlot], act) task.spawn(updateUI) end
     end
-    return oldNamecall(self, ...)
+    return oldNC(self, ...)
 end)
 
--- ХУК КЛИКА (С ВИЗУАЛЬНЫМ ПОДТВЕРЖДЕНИЕМ)
 local oldIdx; oldIdx = hookmetamethod(game, "__index", function(self, k)
     if recording and k == "MouseButton1Click" and self:IsA("TextButton") then
         local txt = self.Text:lower()
         if txt:find("again") or txt:find("retry") or txt:find("replay") then
             table.insert(allMacros[currentSlot], {action="replay_click", t=os.clock()-startTime})
-            status.Text = "REPLAY CAPTURED!" -- Сразу видим, что клик записан
+            status.Text = "REPLAY CAPTURED!"
             task.spawn(updateUI)
         end
     end
     return oldIdx(self, k)
 end)
 
--- // СКАНЕР
+-- // ЦИКЛ АВТОМАТИКИ
 task.spawn(function()
     while task.wait(2) do
-        if autoPlay and not playing and not recording and #allMacros[currentSlot] > 0 then
-            findRemotes()
-            if SpawnTower then doPlay() end
-        end
-        if autoReplay and not playing and not recording then
-            for _, v in pairs(lp.PlayerGui:GetDescendants()) do
-                if v:IsA("TextButton") and v.Visible and (v.Text:lower():find("again") or v.Name:lower():find("retry") or v.Text:lower():find("replay")) then
-                    forceClick(v)
-                    task.wait(5)
+        if not recording and not playing then
+            if autoPlay and isInMatch() and #allMacros[currentSlot] > 0 then
+                findRemotes()
+                if SpawnTower then doPlay() end
+            end
+            if autoReplay then
+                for _, v in pairs(lp.PlayerGui:GetDescendants()) do
+                    if v:IsA("TextButton") and v.Visible and (v.Text:lower():find("again") or v.Name:lower():find("retry")) then
+                        forceClick(v)
+                    end
                 end
             end
         end
+        updateUI()
     end
 end)
 
 recBtn.MouseButton1Click:Connect(function()
-    if not recording then 
-        allMacros[currentSlot] = {} startTime = os.clock() recording = true findRemotes()
-    else 
-        recording = false saveAll() 
-    end
+    if not recording then allMacros[currentSlot] = {} startTime = os.clock() recording = true findRemotes()
+    else recording = false saveAll() end
     updateUI()
 end)
-
 playBtn.MouseButton1Click:Connect(doPlay)
 arBtn.MouseButton1Click:Connect(function() autoReplay = not autoReplay saveAll() refreshToggles() end)
 apBtn.MouseButton1Click:Connect(function() autoPlay = not autoPlay saveAll() refreshToggles() end)
 delBtn.MouseButton1Click:Connect(function() allMacros[currentSlot] = {} saveAll() updateUI() end)
-
 refreshToggles()
